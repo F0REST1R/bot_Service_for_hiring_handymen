@@ -203,14 +203,17 @@ async def process_worker_cities(message: Message, state: FSMContext, db: AsyncSe
         
         # Сохраняем выбранные города
         worker_id = data['worker_id']
+        
+        # Получаем объект Worker
+        from sqlalchemy import select
+        result = await db.execute(select(Worker).where(Worker.id == worker_id))
+        worker = result.scalar_one()
+        
+        # Добавляем города через relationship
         for city_name in selected_cities:
             result = await db.execute(select(City).where(City.name == city_name))
             city = result.scalar_one()
-            
-            # Добавляем связь
-            await db.execute(
-                Worker.cities.insert().values(worker_id=worker_id, city_id=city.id)
-            )
+            worker.cities.append(city)  # Правильный способ добавления
         
         await db.commit()
         
