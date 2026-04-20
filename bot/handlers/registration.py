@@ -1,11 +1,10 @@
 from aiogram import Router, F
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, ReplyKeyboardRemove, KeyboardButton, ReplyKeyboardMarkup
+from aiogram.filters import CommandStart
+from aiogram.types import Message, ReplyKeyboardRemove, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from bot.database.database import get_db
-from bot.database.models import User, Customer, Worker, City
+from bot.database.models import User, Customer, Worker, City, worker_city
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
 from bot.utils.states import RegistrationStates
 from bot.config import settings
@@ -13,30 +12,24 @@ from bot.config import settings
 router = Router()
 
 async def is_user_registered(telegram_id: int, db: AsyncSession) -> bool:
-    """Проверка, зарегистрирован ли пользователь"""
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
     user = result.scalar_one_or_none()
     return user is not None and user.is_registered
 
 async def get_user_role(telegram_id: int, db: AsyncSession) -> str:
-    """Получение роли пользователя"""
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
     user = result.scalar_one_or_none()
     return user.role if user else None
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext, db: AsyncSession):
-    """Обработчик команды /start - проверка регистрации и перенаправление"""
     await state.clear()
     
-    # Проверка на админа
     if message.from_user.id in settings.ADMIN_IDS:
-        # Проверяем, есть ли админ в БД
         result = await db.execute(select(User).where(User.telegram_id == message.from_user.id))
         admin_user = result.scalar_one_or_none()
         
         if not admin_user:
-            # Регистрируем админа
             new_user = User(
                 telegram_id=message.from_user.id,
                 username=message.from_user.username,
@@ -52,7 +45,6 @@ async def cmd_start(message: Message, state: FSMContext, db: AsyncSession):
         )
         return
     
-    # Проверка регистрации обычного пользователя
     registered = await is_user_registered(message.from_user.id, db)
     
     if registered:
@@ -62,10 +54,8 @@ async def cmd_start(message: Message, state: FSMContext, db: AsyncSession):
             reply_markup=get_main_menu(role)
         )
     else:
-        # Начинаем регистрацию
         await message.answer(
-            "📝 Добро пожаловать! Давайте зарегистрируемся.\n\n"
-            "Кто вы?",
+            "📝 Добро пожаловать! Давайте зарегистрируемся.\n\nКто вы?",
             reply_markup=ReplyKeyboardMarkup(
                 keyboard=[
                     [KeyboardButton(text="👤 Заказчик")],
@@ -78,7 +68,6 @@ async def cmd_start(message: Message, state: FSMContext, db: AsyncSession):
 
 @router.message(RegistrationStates.role_choice, F.text.in_(["👤 Заказчик", "🔧 Исполнитель"]))
 async def process_role_choice(message: Message, state: FSMContext, db: AsyncSession):
-    """Обработка выбора роли при регистрации"""
     role = "customer" if message.text == "👤 Заказчик" else "worker"
     await state.update_data(role=role)
     
@@ -97,7 +86,6 @@ async def process_role_choice(message: Message, state: FSMContext, db: AsyncSess
 
 @router.message(RegistrationStates.worker_full_name)
 async def process_worker_full_name(message: Message, state: FSMContext):
-    """Обработка ввода ФИО исполнителя"""
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
@@ -108,7 +96,6 @@ async def process_worker_full_name(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.worker_age)
 async def process_worker_age(message: Message, state: FSMContext):
-    """Обработка ввода возраста исполнителя"""
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
@@ -123,7 +110,6 @@ async def process_worker_age(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.worker_citizenship)
 async def process_worker_citizenship(message: Message, state: FSMContext):
-    """Обработка ввода гражданства исполнителя"""
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
@@ -134,14 +120,12 @@ async def process_worker_citizenship(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.worker_phone)
 async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSession):
-    """Обработка ввода телефона и завершение регистрации исполнителя"""
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
     
     data = await state.update_data(phone=message.text)
     
-    # Создаем пользователя
     new_user = User(
         telegram_id=message.from_user.id,
         username=message.from_user.username,
@@ -151,7 +135,6 @@ async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSes
     db.add(new_user)
     await db.flush()
     
-    # Создаем исполнителя
     new_worker = Worker(
         user_id=new_user.id,
         full_name=data['full_name'],
@@ -162,12 +145,10 @@ async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSes
     db.add(new_worker)
     await db.commit()
     
-    # Получаем список городов для выбора
     result = await db.execute(select(City).where(City.is_active == True))
     cities = result.scalars().all()
     
     if not cities:
-        # Если городов нет, добавляем стандартные
         default_cities = ["Мытищи", "Королёв", "Пушкино"]
         for city_name in default_cities:
             new_city = City(name=city_name, is_active=True)
@@ -177,13 +158,11 @@ async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSes
         result = await db.execute(select(City).where(City.is_active == True))
         cities = result.scalars().all()
     
-    # Создаем клавиатуру для выбора городов
     city_buttons = [[KeyboardButton(text=city.name)] for city in cities]
     city_buttons.append([KeyboardButton(text="✅ Завершить выбор")])
     
     await message.answer(
-        "🏙️ Выберите города, в которых вы готовы работать (можно выбрать несколько):\n"
-        "После выбора нажмите 'Завершить выбор'",
+        "🏙️ Выберите города, в которых вы готовы работать (можно выбрать несколько):\nПосле выбора нажмите 'Завершить выбор'",
         reply_markup=ReplyKeyboardMarkup(keyboard=city_buttons, resize_keyboard=True)
     )
     
@@ -201,19 +180,16 @@ async def process_worker_cities(message: Message, state: FSMContext, db: AsyncSe
             await message.answer("❌ Выберите хотя бы один город!")
             return
         
-        # Сохраняем выбранные города
         worker_id = data['worker_id']
         
-        # Получаем объект Worker
-        from sqlalchemy import select
-        result = await db.execute(select(Worker).where(Worker.id == worker_id))
-        worker = result.scalar_one()
-        
-        # Добавляем города через relationship
+        # Добавляем города через таблицу worker_city напрямую
         for city_name in selected_cities:
             result = await db.execute(select(City).where(City.name == city_name))
             city = result.scalar_one()
-            worker.cities.append(city)  # Правильный способ добавления
+            
+            await db.execute(
+                worker_city.insert().values(worker_id=worker_id, city_id=city.id)
+            )
         
         await db.commit()
         
@@ -222,21 +198,21 @@ async def process_worker_cities(message: Message, state: FSMContext, db: AsyncSe
             reply_markup=get_main_menu('worker')
         )
         await state.clear()
+        return
+    
+    # Сохраняем выбранный город
+    data = await state.get_data()
+    selected_cities = data.get('selected_cities', [])
+    
+    if message.text not in selected_cities:
+        selected_cities.append(message.text)
+        await state.update_data(selected_cities=selected_cities)
+        await message.answer(f"✅ Добавлен город: {message.text}")
     else:
-        # Сохраняем выбранный город
-        data = await state.get_data()
-        selected_cities = data.get('selected_cities', [])
-        
-        if message.text not in selected_cities:
-            selected_cities.append(message.text)
-            await state.update_data(selected_cities=selected_cities)
-            await message.answer(f"✅ Добавлен город: {message.text}")
-        else:
-            await message.answer(f"⚠️ Город {message.text} уже выбран")
+        await message.answer(f"⚠️ Город {message.text} уже выбран")
 
 @router.message(RegistrationStates.customer_full_name)
 async def process_customer_full_name(message: Message, state: FSMContext):
-    """Обработка ввода ФИО заказчика"""
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
@@ -247,14 +223,12 @@ async def process_customer_full_name(message: Message, state: FSMContext):
 
 @router.message(RegistrationStates.customer_phone)
 async def process_customer_phone(message: Message, state: FSMContext, db: AsyncSession):
-    """Обработка ввода телефона и завершение регистрации заказчика"""
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
     
     data = await state.update_data(phone=message.text)
     
-    # Создаем пользователя
     new_user = User(
         telegram_id=message.from_user.id,
         username=message.from_user.username,
@@ -264,7 +238,6 @@ async def process_customer_phone(message: Message, state: FSMContext, db: AsyncS
     db.add(new_user)
     await db.flush()
     
-    # Создаем заказчика
     new_customer = Customer(
         user_id=new_user.id,
         full_name=data['full_name'],
@@ -280,7 +253,6 @@ async def process_customer_phone(message: Message, state: FSMContext, db: AsyncS
     await state.clear()
 
 async def cancel_registration(message: Message, state: FSMContext):
-    """Отмена регистрации"""
     await state.clear()
     await message.answer(
         "❌ Регистрация отменена. Нажмите /start для повторной регистрации.",
