@@ -32,7 +32,6 @@ async def main():
     else:
         logging.info("Using Memory storage")
         storage = MemoryStorage()
-        
     
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher(storage=storage)
@@ -40,6 +39,9 @@ async def main():
     # Регистрация мидлвари
     dp.message.middleware(DatabaseMiddleware())
     dp.callback_query.middleware(DatabaseMiddleware())
+    
+    # Передаём bot в middleware для отправки уведомлений
+    dp['bot'] = bot
     
     # Регистрация роутеров
     dp.include_router(registration.router)

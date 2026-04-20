@@ -147,3 +147,23 @@ async def show_my_responses(message: Message, db: AsyncSession):
         text += f"📌 Отклик: {assignment.assigned_at.strftime('%d.%m.%Y %H:%M')}\n\n"
     
     await message.answer(text, parse_mode="Markdown")
+
+@router.message(F.text == "◀️ Назад")
+async def back_to_main_menu(message: Message, state: FSMContext, db: AsyncSession):
+    """Возврат в главное меню"""
+    await state.clear()
+    
+    # Получаем роль пользователя
+    from sqlalchemy import select
+    result = await db.execute(select(User).where(User.telegram_id == message.from_user.id))
+    user = result.scalar_one_or_none()
+    
+    if user:
+        await message.answer(
+            "👋 Главное меню:",
+            reply_markup=get_main_menu(user.role)
+        )
+    else:
+        await message.answer(
+            "👋 Нажмите /start для начала работы"
+        )

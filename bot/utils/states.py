@@ -34,3 +34,12 @@ class WorkerStates(StatesGroup):
     """Состояния исполнителя"""
     selecting_cities = State()
     worker_id = State()
+
+class AdminStates(StatesGroup):
+    """Состояния администратора"""
+    waiting_for_city_name = State()
+    waiting_for_channel_id = State()
+    waiting_for_notification_text = State()
+    waiting_for_order_close = State()
+    waiting_for_new_name = State()
+    waiting_for_channel_id_edit = State()
