@@ -6,6 +6,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis: 
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -45,7 +47,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DBNAME}
-      POSTGRES_INITDB_ARGS: "--lc-collate=C --lc-ctype=C"  # Добавьте эту строку
+      POSTGRES_INITDB_ARGS: "--lc-collate=C --lc-ctype=C" 
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped

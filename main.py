@@ -32,21 +32,7 @@ async def main():
     else:
         logging.info("Using Memory storage")
         storage = MemoryStorage()
-    
-    # --- Логика прокси ---
-    bot_session = None
-    proxy_url = settings.HTTPS_PROXY  # Берем прокси из переменных окружения
-
-    if proxy_url:
-        logging.info(f"Configuring bot to use proxy: {proxy_url}")
-        # Создаем коннектор с поддержкой SOCKS5 и HTTP прокси
-        connector = ProxyConnector.from_url(proxy_url)
-        # Создаем сессию aiohttp с этим коннектором
-        bot_session = AiohttpSession(connector=connector)
-        bot = Bot(token=settings.BOT_TOKEN, session=bot_session)
-    else:
-        logging.info("No proxy configured, using direct connection.")
-        bot = Bot(token=settings.BOT_TOKEN)
+        
     
     bot = Bot(token=settings.BOT_TOKEN)
     dp = Dispatcher(storage=storage)
