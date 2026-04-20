@@ -4,8 +4,6 @@ services:
       context: .
       dockerfile: Dockerfile
     depends_on:
-      redis:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     env_file:
@@ -23,11 +21,15 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/app/data
-  
+    networks:
+      - bot_network
+
   redis:
     image: redis:7-alpine
     container_name: redis_for_service
     restart: unless-stopped
+    networks:
+      - bot_network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 30s
@@ -43,16 +45,22 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DBNAME}
+      POSTGRES_INITDB_ARGS: "--lc-collate=C --lc-ctype=C"  # Добавьте эту строку
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    networks:
+      - bot_network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DBNAME}"]
       interval: 5s
       timeout: 5s
-      retries: 5
-    command: >
-      postgres -c 'lc_collate=C' -c 'lc_ctype=C'
+      retries: 10
+      start_period: 10s
+
+networks:
+  bot_network:
+    driver: bridge
 
 volumes:
   postgres_data:
