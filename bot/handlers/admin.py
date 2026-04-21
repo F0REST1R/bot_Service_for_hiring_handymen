@@ -174,9 +174,6 @@ async def back_to_cities(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data == "add_city")
 async def add_city_start(callback: CallbackQuery, state: FSMContext):
-    # Удаляем предыдущее сообщение с кнопками
-    await callback.message.delete()
-    
     await state.set_state(AdminStates.waiting_for_city_name)
     await callback.message.answer(
         "🏙️ Введите название нового города:",
@@ -188,13 +185,10 @@ async def add_city_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AdminStates.waiting_for_city_name)
 async def add_city_name(message: Message, state: FSMContext, db: AsyncSession):
-    # Удаляем предыдущее сообщение пользователя
-    await message.delete()
-    
     await state.update_data(city_name=message.text)
     await state.set_state(AdminStates.waiting_for_channel_id)
     
-    sent_msg = await message.answer(
+    await message.answer(
         f"📢 Введите ID Telegram-канала для города *{message.text}*\n\n"
         "Как получить ID канала:\n"
         "1. Добавьте бота в канал как администратора\n"
@@ -208,21 +202,11 @@ async def add_city_name(message: Message, state: FSMContext, db: AsyncSession):
             [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="skip_channel")]
         ])
     )
-    await state.update_data(last_bot_message=sent_msg.message_id)
 
 @router.message(AdminStates.waiting_for_channel_id)
 async def add_city_channel(message: Message, state: FSMContext, db: AsyncSession):
-    # Удаляем предыдущее сообщение пользователя
-    await message.delete()
-    
     data = await state.get_data()
     city_name = data['city_name']
-    
-    # Удаляем предыдущее сообщение бота
-    try:
-        await message.bot.delete_message(message.chat.id, data.get('last_bot_message'))
-    except:
-        pass
     
     # Проверяем, не существует ли уже город
     result = await db.execute(select(City).where(City.name == city_name))
@@ -247,9 +231,6 @@ async def add_city_channel(message: Message, state: FSMContext, db: AsyncSession
 
 @router.callback_query(lambda c: c.data == "skip_channel")
 async def skip_channel(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
-    # Удаляем сообщение с кнопками
-    await callback.message.delete()
-    
     data = await state.get_data()
     city_name = data['city_name']
     
@@ -262,12 +243,12 @@ async def skip_channel(callback: CallbackQuery, state: FSMContext, db: AsyncSess
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "cancel_add_city")
-async def cancel_add_city(callback: CallbackQuery, state: FSMContext):
-    # Удаляем сообщение с кнопками
-    await callback.message.delete()
-    
+async def cancel_add_city(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await state.clear()
     await callback.message.answer("❌ Добавление города отменено")
+    
+    # Возвращаемся в меню управления городами
+    await manage_cities(callback.message, db)
     await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("edit_channel_"))
@@ -275,9 +256,6 @@ async def edit_city_channel_start(callback: CallbackQuery, state: FSMContext):
     city_id = int(callback.data.split("_")[2])
     await state.update_data(edit_city_id=city_id)
     await state.set_state(AdminStates.waiting_for_channel_id_edit)
-    
-    # Удаляем предыдущее сообщение
-    await callback.message.delete()
     
     await callback.message.answer(
         "📢 Введите новый ID Telegram-канала для города:\n\n"
@@ -291,9 +269,6 @@ async def edit_city_channel_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AdminStates.waiting_for_channel_id_edit)
 async def edit_city_channel(message: Message, state: FSMContext, db: AsyncSession):
-    # Удаляем сообщение пользователя
-    await message.delete()
-    
     data = await state.get_data()
     city_id = data['edit_city_id']
     channel_id = message.text if message.text != '0' else None
@@ -311,12 +286,12 @@ async def edit_city_channel(message: Message, state: FSMContext, db: AsyncSessio
     await state.clear()
 
 @router.callback_query(lambda c: c.data == "cancel_edit")
-async def cancel_edit(callback: CallbackQuery, state: FSMContext):
-    # Удаляем сообщение с кнопками
-    await callback.message.delete()
-    
+async def cancel_edit(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await state.clear()
     await callback.message.answer("❌ Редактирование отменено")
+    
+    # Возвращаемся в меню управления городами
+    await manage_cities(callback.message, db)
     await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("toggle_"))
@@ -376,9 +351,6 @@ async def notification_type(callback: CallbackQuery, state: FSMContext, db: Asyn
     notification_type = callback.data.split("_")[1]
     
     if notification_type == "by":
-        # Удаляем предыдущее сообщение с кнопками
-        await callback.message.delete()
-        
         # Уведомление по городам - показываем список городов
         result = await db.execute(select(City).where(City.is_active == True))
         cities = result.scalars().all()
@@ -401,19 +373,16 @@ async def notification_type(callback: CallbackQuery, state: FSMContext, db: Asyn
         await callback.answer()
         return
     
-    # Удаляем предыдущее сообщение
-    await callback.message.delete()
-    
     await state.update_data(notification_role=notification_type)
     await state.set_state(AdminStates.waiting_for_notification_text)
     
-    sent_msg = await callback.message.answer(
+    await callback.message.answer(
         "✏️ Введите текст сообщения для рассылки:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notification")]
         ])
     )
-    await state.update_data(last_bot_message=sent_msg.message_id)
+    await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("notify_city_"))
 async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
@@ -422,40 +391,27 @@ async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSe
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
     
-    # Удаляем сообщение с выбором города
-    await callback.message.delete()
-    
     await state.update_data(notification_role="by_city")
     await state.update_data(notification_city_id=city_id)
     await state.update_data(notification_city_name=city.name)
     await state.set_state(AdminStates.waiting_for_notification_text)
     
-    sent_msg = await callback.message.answer(
+    await callback.message.answer(
         f"✏️ Введите текст сообщения для рассылки пользователям из города *{city.name}*:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notification")]
         ]),
         parse_mode="Markdown"
     )
-    await state.update_data(last_bot_message=sent_msg.message_id)
     await callback.answer()
 
 @router.message(AdminStates.waiting_for_notification_text)
 async def send_notification(message: Message, state: FSMContext, db: AsyncSession, bot):
-    # Удаляем сообщение пользователя
-    await message.delete()
-    
     data = await state.get_data()
     role = data.get('notification_role')
     city_id = data.get('notification_city_id')
     city_name = data.get('notification_city_name')
     text = message.text
-    
-    # Удаляем предыдущее сообщение бота
-    try:
-        await message.bot.delete_message(message.chat.id, data.get('last_bot_message'))
-    except:
-        pass
     
     # Получаем пользователей в зависимости от выбора
     if role == 'customers':
@@ -503,19 +459,25 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
             print(f"Не удалось отправить сообщение пользователю {user.telegram_id}: {e}")
     
     if city_name:
-        await message.answer(f"✅ Уведомление отправлено исполнителям из города {city_name}!")
+        await message.answer(f"✅ Уведомление отправлено {sent} исполнителям из города {city_name}!")
     else:
-        await message.answer(f"✅ Уведомление отправлено пользователям!")
+        await message.answer(f"✅ Уведомление отправлено {sent} пользователям!")
     
     await state.clear()
 
 @router.callback_query(lambda c: c.data == "cancel_notification")
-async def cancel_notification(callback: CallbackQuery, state: FSMContext):
-    # Удаляем сообщение с кнопками
-    await callback.message.delete()
-    
+async def cancel_notification(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await state.clear()
     await callback.message.answer("❌ Рассылка отменена")
+    
+    # Возвращаемся в главное меню админа
+    user = await db.execute(select(User).where(User.telegram_id == callback.from_user.id))
+    user = user.scalar_one_or_none()
+    if user:
+        await callback.message.answer(
+            "👋 Главное меню:",
+            reply_markup=get_main_menu('admin')
+        )
     await callback.answer()
 
 @router.message(F.text == "📊 Аналитика")
@@ -539,3 +501,4 @@ async def show_analytics(message: Message, db: AsyncSession):
         parse_mode="Markdown",
         disable_web_page_preview=True
     )
+    

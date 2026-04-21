@@ -179,6 +179,8 @@ async def order_start_datetime(message: Message, state: FSMContext):
         await message.answer("❌ Дата и время не могут быть в прошлом! Укажите будущую дату.")
         return
     
+    # Сохраняем как строку для JSON сериализации, а также сохраняем объект для использования
+    await state.update_data(start_datetime_str=start_time.strftime("%Y-%m-%d %H:%M:%S"))
     await state.update_data(start_datetime=start_time)
     
     await message.answer(
@@ -272,6 +274,11 @@ async def order_username(message: Message, state: FSMContext, db: AsyncSession, 
     
     data = await state.get_data()
     
+    # Получаем datetime из строки или из объекта
+    start_datetime = data.get('start_datetime')
+    if not start_datetime and data.get('start_datetime_str'):
+        start_datetime = datetime.strptime(data['start_datetime_str'], "%Y-%m-%d %H:%M:%S")
+    
     # Создаём заявку
     new_order = Order(
         customer_id=data['customer_id'],
@@ -280,7 +287,7 @@ async def order_username(message: Message, state: FSMContext, db: AsyncSession, 
         contact_phone=data['contact_phone'],
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=data['start_datetime'],
+        start_datetime=start_datetime,
         estimated_hours=data['estimated_hours'],
         address=data['address'],
         username_for_contact=data['username_for_contact'],
@@ -299,7 +306,7 @@ async def order_username(message: Message, state: FSMContext, db: AsyncSession, 
 📞 *Телефон:* {data['contact_phone']}
 👥 *Количество человек:* {data['workers_count']}
 📝 *Суть работы:* {data['work_description']}
-🕐 *Дата и время:* {data['start_datetime'].strftime('%d.%m.%Y %H:%M')}
+🕐 *Дата и время:* {start_datetime.strftime('%d.%m.%Y %H:%M')}
 ⏱️ *Время занятости:* {data['estimated_hours']} ч.
 🏙️ *Город:* {data['city_name']}
 📍 *Адрес:* {data['address']}
@@ -328,3 +335,4 @@ async def cancel_order(message: Message, state: FSMContext):
         "❌ Создание заявки отменено",
         reply_markup=get_main_menu('customer')
     )
+    
