@@ -41,5 +41,4 @@ class AdminStates(StatesGroup):
     waiting_for_channel_id = State()
     waiting_for_notification_text = State()
     waiting_for_order_close = State()
-    waiting_for_new_name = State()
     waiting_for_channel_id_edit = State()
