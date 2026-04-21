@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from bot.database.models import User, City, Order, Assignment, Worker, worker_city
 from bot.utils.states import AdminStates
 from bot.config import settings
+from bot.keyboards.reply import get_main_menu
 
 router = Router()
 
@@ -137,7 +138,39 @@ async def city_detail(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data == "back_to_cities")
 async def back_to_cities(callback: CallbackQuery, db: AsyncSession):
-    await manage_cities(callback.message, db)
+    # Получаем список городов заново
+    result = await db.execute(select(City).order_by(City.name))
+    cities = result.scalars().all()
+    
+    if not cities:
+        text = "📭 Список городов пуст"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить город", callback_data="add_city")]
+        ])
+    else:
+        text = "🏙️ *Список городов*\n\n"
+        keyboard = []
+        
+        for city in cities:
+            status = "✅" if city.is_active else "❌"
+            channel_info = f"@{city.channel_id}" if city.channel_id else "Не привязан"
+            text += f"{status} *{city.name}*\n"
+            text += f"   📢 Канал: {channel_info}\n\n"
+            
+            keyboard.append([
+                InlineKeyboardButton(
+                    text=f"{status} {city.name}",
+                    callback_data=f"city_{city.id}"
+                )
+            ])
+        
+        keyboard.append([InlineKeyboardButton(text="➕ Добавить город", callback_data="add_city")])
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="Markdown"
+    )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "add_city")
@@ -238,10 +271,11 @@ async def edit_city_name(message: Message, state: FSMContext, db: AsyncSession):
     
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
+    old_name = city.name
     city.name = new_name
     await db.commit()
     
-    await message.answer(f"✅ Название города изменено на *{new_name}*", parse_mode="Markdown")
+    await message.answer(f"✅ Название города изменено с *{old_name}* на *{new_name}*", parse_mode="Markdown")
     await state.clear()
 
 @router.callback_query(lambda c: c.data.startswith("edit_channel_"))
@@ -306,12 +340,16 @@ async def delete_city(callback: CallbackQuery, db: AsyncSession):
     
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
+    city_name = city.name
     
     await db.delete(city)
     await db.commit()
     
-    await callback.answer(f"Город {city.name} удалён")
-    await callback.message.edit_text(f"✅ Город *{city.name}* успешно удалён!", parse_mode="Markdown")
+    await callback.answer(f"Город {city_name} удалён")
+    await callback.message.edit_text(f"✅ Город *{city_name}* успешно удалён!", parse_mode="Markdown")
+    
+    # Показываем обновлённый список городов
+    await back_to_cities(callback, db)
 
 @router.message(F.text == "📢 Уведомления")
 async def send_notification_menu(message: Message, db: AsyncSession):
@@ -322,7 +360,6 @@ async def send_notification_menu(message: Message, db: AsyncSession):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="👤 Заказчикам", callback_data="notify_customers")],
         [InlineKeyboardButton(text="🔧 Исполнителям", callback_data="notify_workers")],
-        [InlineKeyboardButton(text="👑 Администраторам", callback_data="notify_admins")],
         [InlineKeyboardButton(text="🌍 По городам", callback_data="notify_by_city")]
     ])
     
@@ -339,7 +376,6 @@ async def notification_type(callback: CallbackQuery, state: FSMContext, db: Asyn
     
     if notification_type == "by":
         # Уведомление по городам - показываем список городов
-        notification_type = "by_city"
         result = await db.execute(select(City).where(City.is_active == True))
         cities = result.scalars().all()
         
@@ -410,10 +446,6 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
         result = await db.execute(
             select(User).where(User.role == 'worker', User.is_registered == True)
         )
-    elif role == 'admins':
-        result = await db.execute(
-            select(User).where(User.role == 'admin', User.is_registered == True)
-        )
     elif role == 'by_city' and city_id:
         # Получаем исполнителей из выбранного города
         result = await db.execute(
@@ -435,8 +467,6 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
         title = "📢 *Уведомление для заказчиков*"
     elif role == 'workers':
         title = "📢 *Уведомление для исполнителей*"
-    elif role == 'admins':
-        title = "📢 *Уведомление для администраторов*"
     else:
         title = "📢 *Уведомление от администратора*"
     
@@ -465,22 +495,24 @@ async def cancel_notification(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer("❌ Рассылка отменена")
     await callback.answer()
 
-@router.message(F.text == "◀️ Назад")
-async def back_to_main_menu(message: Message, state: FSMContext, db: AsyncSession):
-    """Возврат в главное меню"""
-    await state.clear()
+@router.message(F.text == "📊 Аналитика")
+async def show_analytics(message: Message, db: AsyncSession):
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("⛔ У вас нет доступа к этой функции")
+        return
     
-    # Получаем роль пользователя
-    result = await db.execute(select(User).where(User.telegram_id == message.from_user.id))
-    user = result.scalar_one_or_none()
+    # Ссылка на Google таблицу (потом замените на реальную)
+    google_sheets_url = "https://docs.google.com/spreadsheets/d/ВАША_ССЫЛКА/edit"
     
-    if user:
-        from bot.keyboards.reply import get_main_menu
-        await message.answer(
-            "👋 Главное меню:",
-            reply_markup=get_main_menu(user.role)
-        )
-    else:
-        await message.answer(
-            "👋 Нажмите /start для начала работы"
-        )
+    await message.answer(
+        "📊 *Аналитика*\n\n"
+        "Все данные собираются в Google таблице.\n\n"
+        "🔗 *Ссылка на таблицу:*\n"
+        f"{google_sheets_url}\n\n"
+        "В таблице доступна следующая статистика:\n"
+        "• Общая выручка (сумма переводов от заказчиков)\n"
+        "• Расходы на персонал (зарплаты рабочим)\n"
+        "• Чистая прибыль (разница между доходами и расходами)",
+        parse_mode="Markdown",
+        disable_web_page_preview=True
+    )
