@@ -192,7 +192,7 @@ async def add_city_name(message: Message, state: FSMContext):
     await state.set_state(AdminStates.waiting_for_channel_id)
     
     await message.answer(
-        f"📢 Введите ID Telegram-канала для города *{message.text}*\n\n"
+        f"📢 Введите ID Telegram-канала для города {message.text}\n\n"
         "Как получить ID канала:\n"
         "1. Добавьте бота в канал как администратора\n"
         "2. Отправьте любое сообщение в канал\n"
@@ -200,13 +200,11 @@ async def add_city_name(message: Message, state: FSMContext):
         "4. Бот покажет ID\n\n"
         "Пример: @moscow_channel\n\n"
         "Или отправьте 'Пропустить' чтобы добавить без канала",
-        parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="Пропустить")], [KeyboardButton(text="❌ Отмена")]],
             resize_keyboard=True
         )
     )
-
 @router.message(AdminStates.waiting_for_channel_id)
 async def add_city_channel(message: Message, state: FSMContext, db: AsyncSession):
     if message.text == "❌ Отмена":
@@ -243,8 +241,7 @@ async def add_city_channel(message: Message, state: FSMContext, db: AsyncSession
     await db.commit()
     
     await message.answer(
-        f"✅ Город *{city_name}* успешно добавлен {channel_text}!",
-        parse_mode="Markdown",
+        f"✅ Город {city_name} успешно добавлен {channel_text}!",
         reply_markup=get_main_menu('admin')
     )
     await state.clear()
@@ -291,19 +288,19 @@ async def edit_city_channel(message: Message, state: FSMContext, db: AsyncSessio
     city = result.scalar_one()
     
     if message.text == "Пропустить":
-        await message.answer(f"✅ Канал для города *{city.name}* оставлен без изменений", parse_mode="Markdown")
+        await message.answer(f"✅ Канал для города {city.name} оставлен без изменений")
     elif message.text == "0":
         city.channel_id = None
         await db.commit()
-        await message.answer(f"✅ Привязка канала для города *{city.name}* удалена", parse_mode="Markdown")
+        await message.answer(f"✅ Привязка канала для города {city.name} удалена")
     else:
         city.channel_id = message.text
         await db.commit()
-        await message.answer(f"✅ Канал для города *{city.name}* обновлён: @{message.text}", parse_mode="Markdown")
+        await message.answer(f"✅ Канал для города {city.name} обновлён: @{message.text}")
     
     await state.clear()
     await message.answer("👋 Главное меню:", reply_markup=get_main_menu('admin'))
-
+    
 @router.callback_query(lambda c: c.data.startswith("toggle_"))
 async def toggle_city(callback: CallbackQuery, db: AsyncSession):
     city_id = int(callback.data.split("_")[1])
