@@ -210,7 +210,7 @@ async def order_city(message: Message, state: FSMContext, db: AsyncSession):
     await state.set_state(OrderStates.address)
 
 @router.message(OrderStates.address)
-async def order_address(message: Message, state: FSMContext):
+async def order_address(message: Message, state: FSMContext, db: AsyncSession):
     if message.text == "❌ Отмена":
         await cancel_order(message, state)
         return
