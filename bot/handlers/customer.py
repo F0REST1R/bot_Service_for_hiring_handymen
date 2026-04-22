@@ -186,26 +186,20 @@ async def order_address(message: Message, state: FSMContext):
     
     await state.update_data(address=message.text)
     
-    await message.answer(
-        "👤 Введите username для связи (без @):\n"
-        "Пример: username\n\n"
-        "Или отправьте 'нет' если не хотите указывать",
-        reply_markup=get_cancel_keyboard()
-    )
-    await state.set_state(OrderStates.username)
-
-@router.message(OrderStates.username)
-async def order_username(message: Message, state: FSMContext, db: AsyncSession, bot):
-    if message.text == "❌ Отмена":
-        await cancel_order(message, state)
-        return
+    # Автоматически получаем username
+    username = message.from_user.username
+    if username:
+        username_for_contact = username
+        username_text = f"@{username}"
+    else:
+        username_for_contact = None
+        username_text = "❌ У пользователя нет username"
     
-    username = None if message.text.lower() == 'нет' else message.text
-    await state.update_data(username_for_contact=username)
+    await state.update_data(username_for_contact=username_for_contact)
     
     data = await state.get_data()
     
-    # Создаём заявку с текстовой датой
+    # Создаём заявку
     new_order = Order(
         customer_id=data['customer_id'],
         city_id=data['city_id'],
@@ -222,34 +216,34 @@ async def order_username(message: Message, state: FSMContext, db: AsyncSession, 
     db.add(new_order)
     await db.commit()
     await db.refresh(new_order)
-
+    
     # Уведомляем администраторов
     admin_ids = settings.ADMIN_IDS
     order_text = f"""
-    📢 *НОВАЯ ЗАЯВКА!* 🆔 #{new_order.id}
+📢 *НОВАЯ ЗАЯВКА!* 🆔 #{new_order.id}
 
-    🏢 *Заказчик:* {data['full_name']}
-    📞 *Телефон:* {data['contact_phone']}
-    👥 *Количество человек:* {data['workers_count']}
-    📝 *Суть работы:* {data['work_description']}
-    🕐 *Дата и время:* {data['start_datetime_text']}
-    ⏱️ *Время занятости:* {data['estimated_hours']} ч.
-    🏙️ *Город:* {data['city_name']}
-    📍 *Адрес:* {data['address']}
-    👤 *Username:* @{data['username_for_contact'] if data['username_for_contact'] else 'не указан'}
+🏢 *Заказчик:* {data['full_name']}
+📞 *Телефон:* {data['contact_phone']}
+👥 *Количество человек:* {data['workers_count']}
+📝 *Суть работы:* {data['work_description']}
+🕐 *Дата и время:* {data['start_datetime_text']}
+⏱️ *Время занятости:* {data['estimated_hours']} ч.
+🏙️ *Город:* {data['city_name']}
+📍 *Адрес:* {data['address']}
+👤 *Username:* {username_text}
 
-    📅 *Создана:* {datetime.now().strftime('%d.%m.%Y %H:%M')}
-    """
-
+📅 *Создана:* {datetime.now().strftime('%d.%m.%Y %H:%M')}
+"""
+    
     # Кнопки для администратора
     admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"create_post_{new_order.id}")],
         [InlineKeyboardButton(text="🔒 Закрыть набор", callback_data=f"close_order_{new_order.id}")]
     ])
-
+    
     for admin_id in admin_ids:
         try:
-            await bot.send_message(admin_id, order_text, reply_markup=admin_keyboard, parse_mode="Markdown")
+            await message.bot.send_message(admin_id, order_text, reply_markup=admin_keyboard, parse_mode="Markdown")
         except Exception as e:
             print(f"Не удалось отправить уведомление админу {admin_id}: {e}")
     

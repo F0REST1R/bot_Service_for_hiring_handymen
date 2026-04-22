@@ -86,11 +86,11 @@ class Order(Base):
     address = Column(Text, nullable=False)
     username_for_contact = Column(String(100), nullable=True)
     
-    status = Column(String(20), default='active')  # active, closed
+    status = Column(String(20), default='active')
     created_at = Column(DateTime, default=datetime.now)
     is_active_for_today = Column(Boolean, default=True)
-    channel_post_id = Column(Integer, nullable=True)  # ID сообщения в канале
-    posted_at = Column(DateTime, nullable=True)  # Дата публикации в канале
+    channel_post_id = Column(Integer, nullable=True)  # Добавлено
+    posted_at = Column(DateTime, nullable=True)  # Добавлено
     
     # Связи
     customer = relationship("Customer")
