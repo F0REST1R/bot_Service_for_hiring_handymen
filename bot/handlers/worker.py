@@ -1,11 +1,12 @@
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from bot.database.models import Worker, City, worker_city, Order, Assignment, User
 from bot.keyboards.reply import get_main_menu
 from bot.utils.states import WorkerStates
+from bot.config import settings
 
 router = Router()
 
@@ -167,3 +168,76 @@ async def back_to_main_menu(message: Message, state: FSMContext, db: AsyncSessio
         await message.answer(
             "👋 Нажмите /start для начала работы"
         )
+
+@router.callback_query(lambda c: c.data.startswith("apply_order_"))
+async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
+    """Обработчик нажатия кнопки 'Я поеду' в боте"""
+    order_id = int(callback.data.split("_")[2])
+    
+    # Проверяем, зарегистрирован ли пользователь
+    result = await db.execute(select(User).where(User.telegram_id == callback.from_user.id))
+    user = result.scalar_one_or_none()
+    
+    if not user or user.role != 'worker':
+        await callback.answer("❌ Сначала зарегистрируйтесь как исполнитель!", show_alert=True)
+        return
+    
+    # Получаем исполнителя
+    result = await db.execute(select(Worker).where(Worker.user_id == user.id))
+    worker = result.scalar_one_or_none()
+    
+    if not worker:
+        await callback.answer("❌ Сначала зарегистрируйтесь!", show_alert=True)
+        return
+    
+    # Получаем заявку
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    
+    if not order or order.status != 'active':
+        await callback.answer("❌ Эта заявка уже закрыта!", show_alert=True)
+        return
+    
+    # Проверяем, не откликался ли уже
+    result = await db.execute(
+        select(Assignment).where(
+            Assignment.order_id == order_id,
+            Assignment.worker_id == worker.id
+        )
+    )
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        await callback.answer("❌ Вы уже откликнулись на эту заявку!", show_alert=True)
+        return
+    
+    # Создаём отклик
+    new_assignment = Assignment(
+        order_id=order_id,
+        worker_id=worker.id
+    )
+    db.add(new_assignment)
+    await db.commit()
+    
+    # Уведомляем администратора
+    admin_ids = settings.ADMIN_IDS
+    for admin_id in admin_ids:
+        try:
+            await callback.bot.send_message(
+                admin_id,
+                f"✅ *Новый отклик!*\n\n"
+                f"👤 Исполнитель: {worker.full_name}\n"
+                f"📞 Телефон: {worker.phone}\n"
+                f"🆔 Заявка #{order_id}",
+                parse_mode="Markdown"
+            )
+        except:
+            pass
+    
+    await callback.answer("✅ Вы успешно откликнулись на заявку!", show_alert=True)
+    
+    # Обновляем сообщение
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Вы откликнулись", callback_data=f"already_applied_{order_id}")]
+    ])
+    await callback.message.edit_reply_markup(reply_markup=keyboard)

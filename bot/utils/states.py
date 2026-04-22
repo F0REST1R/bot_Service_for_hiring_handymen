@@ -39,5 +39,6 @@ class AdminStates(StatesGroup):
 class PostStates(StatesGroup):
     """Состояния создания поста"""
     choosing_city = State()
+    entering_price = State() 
     editing_post = State()
     confirming_post = State()

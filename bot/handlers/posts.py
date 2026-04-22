@@ -1,16 +1,17 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, InputFile
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
-from bot.database.models import Order, City, Worker, worker_city
+from bot.database.models import Order, City, Worker, Assignment, worker_city
 from bot.utils.states import PostStates
 from bot.config import settings
+from bot.keyboards.reply import get_main_menu
 
 router = Router()
 
-def format_post_text(order, city):
+def format_post_text(order, city, price_per_person):
     """Форматирование текста поста для канала"""
     text = f"""
 🏗️ *НОВАЯ ЗАЯВКА НА РАБОТУ!*
@@ -19,6 +20,8 @@ def format_post_text(order, city):
 {order.work_description}
 
 👥 *Требуется человек:* {order.workers_count}
+
+💰 *Оплата:* {price_per_person} руб./чел.
 
 📅 *Дата и время:* {order.start_datetime_text if hasattr(order, 'start_datetime_text') else order.start_datetime.strftime('%d.%m.%Y %H:%M')}
 
@@ -98,18 +101,51 @@ async def choose_city_for_post(callback: CallbackQuery, state: FSMContext, db: A
         await callback.answer()
         return
     
+    await state.update_data(city_id=city_id)
+    await state.update_data(city_name=city.name)
+    await state.update_data(channel_id=city.channel_id)
+    
+    # Запрашиваем стоимость
+    await callback.message.answer(
+        f"💰 *Укажите стоимость оплаты для исполнителя*\n\n"
+        f"Город: {city.name}\n\n"
+        f"Введите сумму в рублях за одного человека:\n"
+        f"Пример: 2000",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
+        ]),
+        parse_mode="Markdown"
+    )
+    await state.set_state(PostStates.entering_price)
+    await callback.answer()
+
+@router.message(PostStates.entering_price)
+async def enter_price(message: Message, state: FSMContext, db: AsyncSession):
+    """Ввод стоимости"""
+    if message.text == "❌ Отмена":
+        await cancel_post(message, state)
+        return
+    
+    try:
+        price = int(message.text)
+        if price <= 0:
+            await message.answer("❌ Стоимость должна быть больше 0!")
+            return
+        await state.update_data(price_per_person=price)
+    except ValueError:
+        await message.answer("❌ Введите число! Пример: 2000")
+        return
+    
     # Получаем заявку
     data = await state.get_data()
     order_id = data['order_id']
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one()
-    
-    await state.update_data(city_id=city_id)
-    await state.update_data(city_name=city.name)
-    await state.update_data(channel_id=city.channel_id)
+    city_name = data['city_name']
     
     # Формируем текст поста
-    post_text = format_post_text(order, city)
+    post_text = format_post_text(order, await db.execute(select(City).where(City.id == data['city_id']), price))
+    post_text = post_text[0] if isinstance(post_text, tuple) else post_text
     
     # Сохраняем текст в состояние
     await state.update_data(post_text=post_text)
@@ -117,19 +153,35 @@ async def choose_city_for_post(callback: CallbackQuery, state: FSMContext, db: A
     # Показываем предпросмотр
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Редактировать текст", callback_data="edit_post")],
+        [InlineKeyboardButton(text="💰 Изменить стоимость", callback_data="edit_price")],
         [InlineKeyboardButton(text="✅ Опубликовать", callback_data="publish_post")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
     ])
     
-    await callback.message.answer(
-        f"📝 *Предпросмотр поста для канала {city.name}:*\n\n"
+    await message.answer(
+        f"📝 *Предпросмотр поста для канала {city_name}:*\n\n"
         f"{post_text}\n\n"
         f"---\n"
+        f"💰 Стоимость: {price} руб./чел.\n\n"
         f"Проверьте текст и выберите действие:",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
     await state.set_state(PostStates.confirming_post)
+
+@router.callback_query(PostStates.confirming_post, lambda c: c.data == "edit_price")
+async def edit_price(callback: CallbackQuery, state: FSMContext):
+    """Редактирование стоимости"""
+    await state.set_state(PostStates.entering_price)
+    
+    await callback.message.answer(
+        "💰 *Введите новую стоимость:*\n"
+        "Пример: 2500",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
+        ]),
+        parse_mode="Markdown"
+    )
     await callback.answer()
 
 @router.callback_query(PostStates.confirming_post, lambda c: c.data == "edit_post")
@@ -157,6 +209,7 @@ async def save_edited_post(message: Message, state: FSMContext):
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="✏️ Редактировать текст", callback_data="edit_post")],
+            [InlineKeyboardButton(text="💰 Изменить стоимость", callback_data="edit_price")],
             [InlineKeyboardButton(text="✅ Опубликовать", callback_data="publish_post")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
         ])
@@ -174,6 +227,7 @@ async def save_edited_post(message: Message, state: FSMContext):
     data = await state.get_data()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Редактировать текст", callback_data="edit_post")],
+        [InlineKeyboardButton(text="💰 Изменить стоимость", callback_data="edit_price")],
         [InlineKeyboardButton(text="✅ Опубликовать", callback_data="publish_post")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
     ])
@@ -192,6 +246,7 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
     city_id = data['city_id']
     channel_id = data['channel_id']
     post_text = data['post_text']
+    price_per_person = data['price_per_person']
     
     # Получаем заявку и город
     result = await db.execute(select(Order).where(Order.id == order_id))
@@ -199,6 +254,10 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
     
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
+    
+    # Сохраняем стоимость в заявку
+    order.price_per_person = price_per_person
+    await db.commit()
     
     # Клавиатура для поста
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -223,6 +282,7 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
             f"✅ *Пост успешно опубликован!*\n\n"
             f"🏙️ Город: {city.name}\n"
             f"📢 Канал: {channel_id}\n"
+            f"💰 Стоимость: {price_per_person} руб./чел.\n"
             f"🆔 ID сообщения: {sent_message.message_id}\n"
             f"📅 Время публикации: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
             parse_mode="Markdown"
@@ -242,6 +302,7 @@ async def cancel_edit(callback: CallbackQuery, state: FSMContext):
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✏️ Редактировать текст", callback_data="edit_post")],
+        [InlineKeyboardButton(text="💰 Изменить стоимость", callback_data="edit_price")],
         [InlineKeyboardButton(text="✅ Опубликовать", callback_data="publish_post")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
     ])
@@ -259,3 +320,9 @@ async def cancel_post(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.answer("❌ Создание поста отменено")
     await callback.answer()
+
+async def cancel_post_message(message: Message, state: FSMContext):
+    """Отмена создания поста из сообщения"""
+    await state.clear()
+    await message.answer("❌ Создание поста отменено", reply_markup=get_main_menu('admin'))
+

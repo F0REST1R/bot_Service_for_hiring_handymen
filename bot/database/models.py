@@ -89,8 +89,9 @@ class Order(Base):
     status = Column(String(20), default='active')
     created_at = Column(DateTime, default=datetime.now)
     is_active_for_today = Column(Boolean, default=True)
-    channel_post_id = Column(Integer, nullable=True)  # Добавлено
-    posted_at = Column(DateTime, nullable=True)  # Добавлено
+    channel_post_id = Column(Integer, nullable=True)
+    posted_at = Column(DateTime, nullable=True)
+    price_per_person = Column(Integer, nullable=True)  
     
     # Связи
     customer = relationship("Customer")

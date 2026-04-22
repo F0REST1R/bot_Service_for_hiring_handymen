@@ -85,7 +85,7 @@ async def manage_cities(message: Message, db: AsyncSession):
     
     for city in cities:
         status = "✅" if city.is_active else "❌"
-        channel_info = f"@{city.channel_id}" if city.channel_id else "Не привязан"
+        channel_info = f"{city.channel_id}" if city.channel_id else "Не привязан"
         text += f"{status} *{city.name}*\n"
         text += f"   📢 Канал: {channel_info}\n\n"
         
@@ -113,7 +113,7 @@ async def city_detail(callback: CallbackQuery, db: AsyncSession):
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
     
-    channel_text = f"📢 Канал: @{city.channel_id}" if city.channel_id else "📢 Канал: не привязан"
+    channel_text = f"📢 Канал: {city.channel_id}" if city.channel_id else "📢 Канал: не привязан"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
@@ -297,7 +297,7 @@ async def edit_city_channel(message: Message, state: FSMContext, db: AsyncSessio
     else:
         city.channel_id = message.text
         await db.commit()
-        await message.answer(f"✅ Канал для города {city.name} обновлён: @{message.text}")
+        await message.answer(f"✅ Канал для города {city.name} обновлён: {message.text}")
     
     await state.clear()
     await message.answer("👋 Главное меню:", reply_markup=get_main_menu('admin'))
