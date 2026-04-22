@@ -35,3 +35,9 @@ class AdminStates(StatesGroup):
     waiting_for_notification_text = State()
     waiting_for_order_close = State()
     waiting_for_channel_id_edit = State()
+
+class PostStates(StatesGroup):
+    """Состояния создания поста"""
+    choosing_city = State()
+    editing_post = State()
+    confirming_post = State()
