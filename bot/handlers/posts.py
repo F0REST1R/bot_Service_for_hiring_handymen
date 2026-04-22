@@ -13,6 +13,12 @@ router = Router()
 
 def format_post_text(order, city, price_per_person):
     """Форматирование текста поста для канала"""
+    # Получаем дату из заявки
+    if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
+        date_text = order.start_datetime_text
+    else:
+        date_text = order.start_datetime.strftime('%d.%m.%Y %H:%M')
+    
     text = f"""
 🏗️ *НОВАЯ ЗАЯВКА НА РАБОТУ!*
 
@@ -23,7 +29,7 @@ def format_post_text(order, city, price_per_person):
 
 💰 *Оплата:* {price_per_person} руб./чел.
 
-📅 *Дата и время:* {order.start_datetime_text if hasattr(order, 'start_datetime_text') else order.start_datetime.strftime('%d.%m.%Y %H:%M')}
+📅 *Дата и время:* {date_text}
 
 📍 *Адрес:* {order.address}
 
@@ -136,16 +142,20 @@ async def enter_price(message: Message, state: FSMContext, db: AsyncSession):
         await message.answer("❌ Введите число! Пример: 2000")
         return
     
-    # Получаем заявку
+    # Получаем заявку и город
     data = await state.get_data()
     order_id = data['order_id']
+    city_id = data['city_id']
+    price = data['price_per_person']
+    
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one()
-    city_name = data['city_name']
+    
+    result = await db.execute(select(City).where(City.id == city_id))
+    city = result.scalar_one()
     
     # Формируем текст поста
-    post_text = format_post_text(order, await db.execute(select(City).where(City.id == data['city_id']), price))
-    post_text = post_text[0] if isinstance(post_text, tuple) else post_text
+    post_text = format_post_text(order, city, price)
     
     # Сохраняем текст в состояние
     await state.update_data(post_text=post_text)
@@ -159,7 +169,7 @@ async def enter_price(message: Message, state: FSMContext, db: AsyncSession):
     ])
     
     await message.answer(
-        f"📝 *Предпросмотр поста для канала {city_name}:*\n\n"
+        f"📝 *Предпросмотр поста для канала {city.name}:*\n\n"
         f"{post_text}\n\n"
         f"---\n"
         f"💰 Стоимость: {price} руб./чел.\n\n"
@@ -315,14 +325,13 @@ async def cancel_edit(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "cancel_post")
-async def cancel_post(callback: CallbackQuery, state: FSMContext):
-    """Отмена создания поста"""
+async def cancel_post_callback(callback: CallbackQuery, state: FSMContext):
+    """Отмена создания поста (callback)"""
     await state.clear()
     await callback.message.answer("❌ Создание поста отменено")
     await callback.answer()
 
-async def cancel_post_message(message: Message, state: FSMContext):
-    """Отмена создания поста из сообщения"""
+async def cancel_post(message: Message, state: FSMContext):
+    """Отмена создания поста (из сообщения)"""
     await state.clear()
     await message.answer("❌ Создание поста отменено", reply_markup=get_main_menu('admin'))
-
