@@ -13,6 +13,7 @@ class RegistrationStates(StatesGroup):
 
 class OrderStates(StatesGroup):
     """Состояния создания заявки"""
+    use_registration_data = State()
     full_name = State()
     phone = State()
     workers_count = State()
@@ -21,7 +22,6 @@ class OrderStates(StatesGroup):
     estimated_hours = State()
     city = State()
     address = State()
-    username = State()
 
 class WorkerStates(StatesGroup):
     """Состояния исполнителя"""

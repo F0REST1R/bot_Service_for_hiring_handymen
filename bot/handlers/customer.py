@@ -23,17 +23,51 @@ async def create_order_start(message: Message, state: FSMContext, db: AsyncSessi
         await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
         return
     
+    # Сохраняем данные из регистрации
     await state.update_data(customer_id=customer.id)
     await state.update_data(customer_phone=customer.phone)
     await state.update_data(customer_name=customer.full_name)
     
+    # Спрашиваем, использовать ли данные из регистрации
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ Да, использовать данные из регистрации")],
+            [KeyboardButton(text="✏️ Нет, ввести новые данные")]
+        ],
+        resize_keyboard=True
+    )
+    
     await message.answer(
-        "📝 *Создание новой заявки*\n\n"
-        "Введите ФИО или название организации:",
-        reply_markup=get_cancel_keyboard(),
+        f"📝 *Создание новой заявки*\n\n"
+        f"Ваши данные из регистрации:\n"
+        f"📛 ФИО/Организация: {customer.full_name}\n"
+        f"📞 Телефон: {customer.phone}\n\n"
+        f"Использовать эти данные для заявки?",
+        reply_markup=keyboard,
         parse_mode="Markdown"
     )
-    await state.set_state(OrderStates.full_name)
+    await state.set_state(OrderStates.use_registration_data)
+
+@router.message(OrderStates.use_registration_data, F.text.in_(["✅ Да, использовать данные из регистрации", "✏️ Нет, ввести новые данные"]))
+async def order_use_registration_data(message: Message, state: FSMContext):
+    if message.text == "✅ Да, использовать данные из регистрации":
+        data = await state.get_data()
+        await state.update_data(full_name=data['customer_name'])
+        await state.update_data(contact_phone=data['customer_phone'])
+        
+        # Переходим к следующему шагу - количество человек
+        await message.answer(
+            "👥 Введите количество необходимых человек:",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.set_state(OrderStates.workers_count)
+    
+    else:  # Нет, ввести новые данные
+        await message.answer(
+            "📝 Введите ФИО или название организации:",
+            reply_markup=get_cancel_keyboard()
+        )
+        await state.set_state(OrderStates.full_name)
 
 @router.message(OrderStates.full_name)
 async def order_full_name(message: Message, state: FSMContext):
@@ -43,12 +77,8 @@ async def order_full_name(message: Message, state: FSMContext):
     
     await state.update_data(full_name=message.text)
     
-    data = await state.get_data()
-    default_phone = data.get('customer_phone', '')
-    
     await message.answer(
-        f"📞 Введите контактный номер телефона:\n"
-        f"(можно отправить '{default_phone}' чтобы использовать номер из регистрации)",
+        "📞 Введите контактный номер телефона:",
         reply_markup=get_cancel_keyboard()
     )
     await state.set_state(OrderStates.phone)
@@ -59,11 +89,7 @@ async def order_phone(message: Message, state: FSMContext):
         await cancel_order(message, state)
         return
     
-    data = await state.get_data()
-    if message.text == data.get('customer_phone'):
-        await state.update_data(contact_phone=message.text)
-    else:
-        await state.update_data(contact_phone=message.text)
+    await state.update_data(contact_phone=message.text)
     
     await message.answer(
         "👥 Введите количество необходимых человек:",
@@ -138,14 +164,19 @@ async def order_estimated_hours(message: Message, state: FSMContext, db: AsyncSe
         await message.answer("❌ Введите число (например: 4, 6.5, 8)")
         return
     
-    # Получаем список городов
+    # Получаем список активных городов
     result = await db.execute(select(City).where(City.is_active == True))
     cities = result.scalars().all()
     
     if not cities:
-        await message.answer("❌ Нет доступных городов. Обратитесь к администратору.")
+        await message.answer(
+            "❌ Нет доступных городов.\n\n"
+            "Пожалуйста, сообщите администратору о проблеме.\n"
+            "Администратор может добавить города в панели управления."
+        )
         return
     
+    # Создаём клавиатуру с городами
     keyboard = [[KeyboardButton(text=city.name)] for city in cities]
     keyboard.append([KeyboardButton(text="❌ Отмена")])
     
@@ -207,7 +238,7 @@ async def order_address(message: Message, state: FSMContext):
         contact_phone=data['contact_phone'],
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=datetime.now(),  # Временное значение, не используется
+        start_datetime=datetime.now(),  # Временное значение
         estimated_hours=data['estimated_hours'],
         address=data['address'],
         username_for_contact=data['username_for_contact'],
