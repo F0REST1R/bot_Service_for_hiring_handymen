@@ -10,6 +10,7 @@ from bot.utils.states import AdminStates
 from bot.config import settings
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
 from bot.handlers import posts
+import re
 
 router = Router()
 
@@ -19,7 +20,6 @@ async def is_admin(telegram_id: int, db: AsyncSession) -> bool:
     user = result.scalar_one_or_none()
     return user is not None and user.role == 'admin'
 
-# Главное меню админа
 @router.message(F.text == "📋 Активные заявки")
 async def show_active_orders(message: Message, db: AsyncSession):
     if not await is_admin(message.from_user.id, db):
@@ -31,37 +31,232 @@ async def show_active_orders(message: Message, db: AsyncSession):
     
     # Заявки на сегодня и завтра
     result = await db.execute(
-        select(Order).where(
+        select(Order, City)
+        .join(City, Order.city_id == City.id)
+        .where(
             Order.status == 'active',
             Order.start_datetime >= today,
             Order.start_datetime <= tomorrow + timedelta(days=1)
         )
+        .order_by(Order.start_datetime)
     )
-    orders = result.scalars().all()
+    orders = result.all()
     
     if not orders:
         await message.answer("📭 Нет активных заявок на сегодня и завтра")
         return
     
-    text = "📋 *Активные заявки*\n\n"
-    for order in orders:
-        # Получаем город
-        city_result = await db.execute(select(City).where(City.id == order.city_id))
-        city = city_result.scalar_one()
-        
-        text += f"🏙️ *{city.name}*\n"
-        text += f"🕐 Время: {order.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
-        text += f"👥 Количество человек: {order.workers_count}\n"
+    text = f"📋 <b>Активные заявки</b>\n" \
+    f"<b>Для просмотра деталей отправьте:</b> `Заявка <ID>`\n\n"
+    for order, city in orders:
+        # Определяем статус набора
+        if order.status == 'active':
+            status_icon = "❌"
+            status_text = "Требуются рабочие"
+        else:
+            status_icon = "✅"
+            status_text = "Набор закрыт"
         
         # Количество откликнувшихся
         assignments_result = await db.execute(
             select(Assignment).where(Assignment.order_id == order.id)
         )
-        assignments = assignments_result.scalars().all()
-        text += f"📌 Откликнулось: {len(assignments)} чел.\n"
-        text += f"🆔 ID заявки: `{order.id}`\n\n"
+        assignments_count = len(assignments_result.scalars().all())
+        
+        text += f"🏙️ Город: {city.name} ID:{order.id}\n"
+        text += f"🕐 Время: {order.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+        text += f"👥 Требуется: {order.workers_count} чел.\n"
+        text += f"📌 Откликнулось: {assignments_count} чел.\n"
+        text += f"{status_icon} {status_text}\n"
+        text += f"💬 <b>Для просмотра деталей отправьте:</b> `Заявка {order.id}`\n"
+        text += f"---\n\n"
     
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
+
+@router.message(F.text.regexp(r'^Заявка\s+(\d+)$', flags=re.IGNORECASE))
+async def show_order_details(message: Message, db: AsyncSession):
+    """Показать детали заявки по ID"""
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("⛔ У вас нет доступа к этой функции")
+        return
+    
+    import re
+    match = re.match(r'^Заявка\s+(\d+)$', message.text, re.IGNORECASE)
+    if not match:
+        await message.answer("❌ Неверный формат. Используйте: Заявка 123")
+        return
+    
+    order_id = int(match.group(1))
+    
+    # Получаем заявку с городом
+    result = await db.execute(
+        select(Order, City)
+        .join(City, Order.city_id == City.id)
+        .where(Order.id == order_id)
+    )
+    order_data = result.first()
+    
+    if not order_data:
+        await message.answer(f"❌ Заявка с ID {order_id} не найдена")
+        return
+    
+    order, city = order_data
+    
+    # Получаем всех откликнувшихся рабочих
+    assignments_result = await db.execute(
+        select(Assignment, Worker, User)
+        .join(Worker, Assignment.worker_id == Worker.id)
+        .join(User, Worker.user_id == User.id)
+        .where(Assignment.order_id == order_id)
+    )
+    assignments = assignments_result.all()
+    
+    # Определяем статус набора
+    if order.status == 'active':
+        status_icon = "❌"
+        status_text = "Набор открыт"
+    else:
+        status_icon = "✅"
+        status_text = "Набор закрыт"
+    
+    # Формируем текст заявки
+    order_text = f"""
+📋 *ДЕТАЛИ ЗАЯВКИ* 🆔 #{order.id}
+
+🏢 *Заказчик:* {order.full_name}
+📞 *Телефон:* {order.contact_phone}
+👥 *Количество человек:* {order.workers_count}
+📝 *Суть работы:* {order.work_description}
+🕐 *Дата и время:* {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
+⏱️ *Время занятости:* {order.estimated_hours} ч.
+🏙️ *Город:* {city.name}
+📍 *Адрес:* {order.address}
+👤 *Username:* @{order.username_for_contact if order.username_for_contact else 'не указан'}
+💰 *Оплата:* {order.price_per_person} руб./чел. {'(не указана)' if not order.price_per_person else ''}
+
+📊 *Статус:* {status_icon} {status_text}
+📅 *Создана:* {order.created_at.strftime('%d.%m.%Y %H:%M')}
+"""
+
+    # Добавляем информацию об откликнувшихся
+    if assignments:
+        order_text += f"\n👥 *Откликнувшиеся исполнители:* ({len(assignments)} чел.)\n\n"
+        for i, (assignment, worker, user) in enumerate(assignments, 1):
+            order_text += f"{i}. *{worker.full_name}*\n"
+            order_text += f"   📞 Телефон: {worker.phone}\n"
+            order_text += f"   📅 Возраст: {worker.age}\n"
+            order_text += f"   🌍 Гражданство: {worker.citizenship}\n"
+            order_text += f"   📌 Отклик: {assignment.assigned_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+    else:
+        order_text += "\n📭 *Откликнувшиеся исполнители:* нет\n"
+    
+    # Кнопки для администратора
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    
+    if order.status == 'active':
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔒 Закрыть набор", callback_data=f"close_order_{order.id}")]
+        )
+    else:
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔓 Открыть набор", callback_data=f"open_order_{order.id}")]
+        )
+    
+    if not order.channel_post_id:
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"create_post_{order.id}")]
+        )
+    else:
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="📢 Пост создан", callback_data="post_already_created")]
+        )
+    
+    await message.answer(order_text, reply_markup=keyboard if keyboard.inline_keyboard else None, parse_mode="Markdown")
+
+@router.callback_query(lambda c: c.data.startswith("close_order_"))
+async def close_order(callback: CallbackQuery, db: AsyncSession):
+    """Закрыть набор на заявку"""
+    order_id = int(callback.data.split("_")[2])
+    
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+    order.status = 'closed'
+    await db.commit()
+    
+    await callback.answer(f"✅ Набор на заявку {order_id} закрыт")
+    
+    # Обновляем сообщение с деталями
+    await show_order_details(callback.message, db)
+    await callback.message.delete()
+    await callback.message.answer(f"✅ Набор на заявку {order_id} закрыт!")
+
+@router.callback_query(lambda c: c.data.startswith("open_order_"))
+async def open_order(callback: CallbackQuery, db: AsyncSession):
+    """Открыть набор на заявку"""
+    order_id = int(callback.data.split("_")[2])
+    
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+    order.status = 'active'
+    await db.commit()
+    
+    await callback.answer(f"✅ Набор на заявку {order_id} открыт")
+    
+    # Обновляем сообщение с деталями
+    await show_order_details(callback.message, db)
+    await callback.message.delete()
+    await callback.message.answer(f"✅ Набор на заявку {order_id} открыт!")
+
+@router.callback_query(lambda c: c.data == "post_already_created")
+async def post_already_created(callback: CallbackQuery):
+    await callback.answer("Пост для этой заявки уже создан", show_alert=True)
+
+@router.message(F.text.regexp(r'^Отклики\s+(\d+)$', flags=re.IGNORECASE))
+async def show_order_assignments(message: Message, db: AsyncSession):
+    """Показать откликнувшихся на заявку"""
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("⛔ У вас нет доступа к этой функции")
+        return
+    
+    import re
+    match = re.match(r'^Отклики\s+(\d+)$', message.text, re.IGNORECASE)
+    if not match:
+        await message.answer("❌ Неверный формат. Используйте: Отклики 123")
+        return
+    
+    order_id = int(match.group(1))
+    
+    # Проверяем, существует ли заявка
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+    
+    if not order:
+        await message.answer(f"❌ Заявка с ID {order_id} не найдена")
+        return
+    
+    # Получаем откликнувшихся
+    result = await db.execute(
+        select(Assignment, Worker, User)
+        .join(Worker, Assignment.worker_id == Worker.id)
+        .join(User, Worker.user_id == User.id)
+        .where(Assignment.order_id == order_id)
+    )
+    assignments = result.all()
+    
+    if not assignments:
+        await message.answer(f"📭 На заявку {order_id} никто не откликнулся")
+        return
+    
+    text = f"👥 <b>Откликнувшиеся на заявку {order_id}:<b>\n\n"
+    for i, (assignment, worker, user) in enumerate(assignments, 1):
+        text += f"{i}. <b>{worker.full_name}</b>\n"
+        text += f"   📞 Телефон: {worker.phone}\n"
+        text += f"   📅 Возраст: {worker.age}\n"
+        text += f"   🌍 Гражданство: {worker.citizenship}\n"
+        text += f"   👤 Telegram: @{user.username if user.username else 'нет username'}\n"
+        text += f"   📌 Отклик: {assignment.assigned_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+    
+    await message.answer(text, parse_mode="HTML")
 
 @router.message(F.text == "🏙️ Управление городами")
 async def manage_cities(message: Message, db: AsyncSession):
@@ -495,45 +690,16 @@ async def show_analytics(message: Message, db: AsyncSession):
     google_sheets_url = "https://docs.google.com/spreadsheets/d/ВАША_ССЫЛКА/edit"
     
     await message.answer(
-        "📊 *Аналитика*\n\n"
+        "📊 <b>Аналитика</b>\n\n"
         "Все данные собираются в Google таблице.\n\n"
-        "🔗 *Ссылка на таблицу:*\n"
-        f"{google_sheets_url}\n\n"
+        "Ссылка на таблицу:\n"
+        f"<a href='{google_sheets_url}'>Открыть таблицу</a>\n\n"
         "В таблице доступна следующая статистика:\n"
         "• Общая выручка (сумма переводов от заказчиков)\n"
         "• Расходы на персонал (зарплаты рабочим)\n"
         "• Чистая прибыль (разница между доходами и расходами)",
-        parse_mode="Markdown",
-        disable_web_page_preview=True
+        parse_mode="HTML"
     )
-
-@router.message(F.text == "📢 Опубликованные посты")
-async def show_published_posts(message: Message, db: AsyncSession):
-    if not await is_admin(message.from_user.id, db):
-        await message.answer("⛔ У вас нет доступа к этой функции")
-        return
-    
-    result = await db.execute(
-        select(Order, City)
-        .join(City, Order.city_id == City.id)
-        .where(Order.channel_post_id.isnot(None))
-        .order_by(Order.posted_at.desc())
-    )
-    orders = result.all()
-    
-    if not orders:
-        await message.answer("📭 Нет опубликованных постов")
-        return
-    
-    text = "📢 *Опубликованные посты*\n\n"
-    for order, city in orders:
-        text += f"🆔 Заявка #{order.id}\n"
-        text += f"🏙️ Город: {city.name}\n"
-        text += f"📅 Опубликован: {order.posted_at.strftime('%d.%m.%Y %H:%M')}\n"
-        text += f"📊 Статус: {'Активен' if order.status == 'active' else 'Закрыт'}\n"
-        text += f"🆔 ID в канале: `{order.channel_post_id}`\n\n"
-    
-    await message.answer(text, parse_mode="Markdown")
 
 @router.callback_query(lambda c: c.data.startswith("apply_order_"))
 async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
