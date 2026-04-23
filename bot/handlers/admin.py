@@ -71,7 +71,7 @@ async def show_active_orders(message: Message, db: AsyncSession):
         text += f"💬 <b>Для просмотра деталей отправьте:</b> `Заявка {order.id}`\n"
         text += f"---\n\n"
     
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(text, parse_mode="Markdown")
 
 @router.message(F.text.regexp(r'^Заявка\s+(\d+)$', flags=re.IGNORECASE))
 async def show_order_details(message: Message, db: AsyncSession):
@@ -179,6 +179,7 @@ async def show_order_details(message: Message, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data.startswith("close_order_"))
 async def close_order(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
     """Закрыть набор на заявку"""
     order_id = int(callback.data.split("_")[2])
     
@@ -196,6 +197,7 @@ async def close_order(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data.startswith("open_order_"))
 async def open_order(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
     """Открыть набор на заявку"""
     order_id = int(callback.data.split("_")[2])
     
@@ -272,11 +274,10 @@ async def manage_cities(message: Message, db: AsyncSession):
     cities = result.scalars().all()
     
     if not cities:
-        await message.answer("📭 Список городов пуст\n\n➕ Чтобы добавить город, нажмите кнопку ниже")
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="➕ Добавить город", callback_data="add_city")]
         ])
-        await message.answer("Выберите действие:", reply_markup=keyboard)
+        await message.answer("📭 Список городов пуст\n\n➕ Чтобы добавить город, нажмите кнопку ниже", reply_markup=keyboard)
         return
     
     text = "🏙️ *Список городов*\n\n"
@@ -307,6 +308,7 @@ async def manage_cities(message: Message, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data.startswith("city_"))
 async def city_detail(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
     city_id = int(callback.data.split("_")[1])
     
     result = await db.execute(select(City).where(City.id == city_id))
@@ -337,6 +339,7 @@ async def city_detail(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data == "back_to_cities")
 async def back_to_cities(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
     # Получаем список городов заново
     result = await db.execute(select(City).order_by(City.name))
     cities = result.scalars().all()
@@ -375,6 +378,7 @@ async def back_to_cities(callback: CallbackQuery, db: AsyncSession):
 # Новая система добавления города через состояния (как при регистрации)
 @router.callback_query(lambda c: c.data == "add_city")
 async def add_city_start(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     await state.set_state(AdminStates.waiting_for_city_name)
     await callback.message.answer(
         "🏙️ Введите название нового города:",
@@ -455,6 +459,7 @@ async def cancel_add_city(message: Message, state: FSMContext):
 
 @router.callback_query(lambda c: c.data.startswith("edit_channel_"))
 async def edit_city_channel_start(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     city_id = int(callback.data.split("_")[2])
     await state.update_data(edit_city_id=city_id)
     await state.set_state(AdminStates.waiting_for_channel_id_edit)
@@ -503,6 +508,7 @@ async def edit_city_channel(message: Message, state: FSMContext, db: AsyncSessio
     
 @router.callback_query(lambda c: c.data.startswith("toggle_"))
 async def toggle_city(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
     city_id = int(callback.data.split("_")[1])
     
     result = await db.execute(select(City).where(City.id == city_id))
@@ -519,6 +525,7 @@ async def toggle_city(callback: CallbackQuery, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data.startswith("delete_"))
 async def delete_city(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
     city_id = int(callback.data.split("_")[1])
     
     result = await db.execute(select(City).where(City.id == city_id))
@@ -555,6 +562,7 @@ async def send_notification_menu(message: Message, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data.startswith("notify_"))
 async def notification_type(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    await callback.answer()
     notification_type = callback.data.split("_")[1]
     
     if notification_type == "by":
@@ -593,6 +601,7 @@ async def notification_type(callback: CallbackQuery, state: FSMContext, db: Asyn
 
 @router.callback_query(lambda c: c.data.startswith("notify_city_"))
 async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    await callback.answer()
     city_id = int(callback.data.split("_")[2])
     
     result = await db.execute(select(City).where(City.id == city_id))
@@ -603,6 +612,11 @@ async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSe
     await state.update_data(notification_city_name=city.name)
     await state.set_state(AdminStates.waiting_for_notification_text)
     
+    try:
+        await callback.message.delete()
+    except:
+        pass
+
     await callback.message.answer(
         f"✏️ Введите текст сообщения для рассылки пользователям из города *{city.name}*:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
@@ -644,14 +658,7 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
     
     users = result.scalars().all()
     
-    if role == 'by_city' and city_name:
-        title = f"📢 *Уведомление для города {city_name}*"
-    elif role == 'customers':
-        title = "📢 *Уведомление для заказчиков*"
-    elif role == 'workers':
-        title = "📢 *Уведомление для исполнителей*"
-    else:
-        title = "📢 *Уведомление от администратора*"
+    title = "📢 *Уведомление от администратора*"
     
     sent = 0
     for user in users:
@@ -666,14 +673,15 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
             print(f"Не удалось отправить сообщение пользователю {user.telegram_id}: {e}")
     
     if city_name:
-        await message.answer(f"✅ Уведомление отправлено {sent} исполнителям из города {city_name}!")
+        await message.answer(f"✅ Уведомление отправлено исполнителям из города {city_name}!")
     else:
-        await message.answer(f"✅ Уведомление отправлено {sent} пользователям!")
+        await message.answer(f"✅ Уведомление отправлено пользователям!")
     
     await state.clear()
 
 @router.callback_query(lambda c: c.data == "cancel_notification")
 async def cancel_notification(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    await callback.answer()
     await state.clear()
     await callback.message.answer("❌ Рассылка отменена")
     
@@ -697,25 +705,33 @@ async def show_analytics(message: Message, db: AsyncSession):
         "📊 <b>Аналитика</b>\n\n"
         "Все данные собираются в Google таблице.\n\n"
         "Ссылка на таблицу:\n"
-        f"<a href='{google_sheets_url}'>Открыть таблицу</a>\n\n"
-        "В таблице доступна следующая статистика:\n"
-        "• Общая выручка (сумма переводов от заказчиков)\n"
-        "• Расходы на персонал (зарплаты рабочим)\n"
-        "• Чистая прибыль (разница между доходами и расходами)",
+        f"<a href='{google_sheets_url}'>Открыть таблицу</a>\n\n",
         parse_mode="HTML"
     )
 
 @router.callback_query(lambda c: c.data.startswith("apply_order_"))
 async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
-    """Обработчик нажатия кнопки 'Я поеду'"""
+    """Обработчик нажатия кнопки 'Я поеду' - универсальный"""
     order_id = int(callback.data.split("_")[2])
     
     # Проверяем, зарегистрирован ли пользователь
     result = await db.execute(select(User).where(User.telegram_id == callback.from_user.id))
     user = result.scalar_one_or_none()
     
-    if not user or user.role != 'worker':
-        await callback.answer("❌ Сначала зарегистрируйтесь как исполнитель!", show_alert=True)
+    if not user:
+        await callback.answer(
+            "❌ Сначала зарегистрируйтесь!\n"
+            "Нажмите /start и пройдите регистрацию как исполнитель",
+            show_alert=True
+        )
+        return
+    
+    if user.role != 'worker':
+        await callback.answer(
+            "❌ Только исполнители могут откликаться на заявки!\n"
+            "Зарегистрируйтесь как исполнитель через /start",
+            show_alert=True
+        )
         return
     
     # Получаем исполнителя
@@ -723,15 +739,23 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
     worker = result.scalar_one_or_none()
     
     if not worker:
-        await callback.answer("❌ Сначала зарегистрируйтесь!", show_alert=True)
+        await callback.answer(
+            "❌ Сначала завершите регистрацию исполнителя через /start",
+            show_alert=True
+        )
         return
     
     # Получаем заявку
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one_or_none()
     
-    if not order or order.status != 'active':
-        await callback.answer("❌ Эта заявка уже закрыта!", show_alert=True)
+    if not order:
+        await callback.answer("❌ Заявка не найдена", show_alert=True)
+        return
+    
+    # Проверяем, открыт ли набор
+    if order.status != 'active':
+        await callback.answer("❌ Набор на эту заявку уже закрыт!", show_alert=True)
         return
     
     # Проверяем, не откликался ли уже
@@ -744,7 +768,28 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
     existing = result.scalar_one_or_none()
     
     if existing:
-        await callback.answer("❌ Вы уже откликнулись на эту заявку!", show_alert=True)
+        await callback.answer(
+            "❌ Вы уже откликнулись на эту заявку!\n"
+            "Ожидайте звонка администратора",
+            show_alert=True
+        )
+        return
+    
+    # Проверяем, есть ли свободные места
+    result = await db.execute(
+        select(Assignment).where(Assignment.order_id == order_id)
+    )
+    current_assignments = result.scalars().all()
+    
+    if len(current_assignments) >= order.workers_count:
+        # Набор закрыт
+        order.status = 'closed'
+        await db.commit()
+        await callback.answer(
+            "❌ Набор на эту заявку уже закрыт!\n"
+            "Все места заняты",
+            show_alert=True
+        )
         return
     
     # Создаём отклик
@@ -753,33 +798,71 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
         worker_id=worker.id
     )
     db.add(new_assignment)
+    
+    # Проверяем, не набралось ли полное количество
+    result = await db.execute(
+        select(Assignment).where(Assignment.order_id == order_id)
+    )
+    all_assignments = result.scalars().all()
+    
+    if len(all_assignments) >= order.workers_count:
+        order.status = 'closed'
+    
     await db.commit()
     
-    # Уведомляем администратора
+    # Уведомляем администраторов о новом отклике
     admin_ids = settings.ADMIN_IDS
     for admin_id in admin_ids:
         try:
+            # Получаем город
+            city_result = await db.execute(select(City).where(City.id == order.city_id))
+            city = city_result.scalar_one()
+            
             await callback.bot.send_message(
                 admin_id,
-                f"✅ *Новый отклик!*\n\n"
+                f"✅ *НОВЫЙ ОТКЛИК!*\n\n"
                 f"👤 Исполнитель: {worker.full_name}\n"
                 f"📞 Телефон: {worker.phone}\n"
-                f"🆔 Заявка #{order_id}",
+                f"📅 Возраст: {worker.age}\n"
+                f"🌍 Гражданство: {worker.citizenship}\n"
+                f"🆔 Заявка #{order_id}\n"
+                f"🏙️ Город: {city.name}\n"
+                f"👥 Мест занято: {len(all_assignments)}/{order.workers_count}",
                 parse_mode="Markdown"
             )
-        except:
-            pass
+        except Exception as e:
+            print(f"Не удалось отправить уведомление админу {admin_id}: {e}")
     
-    await callback.answer("✅ Вы успешно откликнулись на заявку!", show_alert=True)
+    # Ответ пользователю
+    remaining_spots = order.workers_count - len(all_assignments)
+    if remaining_spots > 0:
+        await callback.answer(
+            f"✅ Вы успешно откликнулись на заявку #{order_id}!\n"
+            f"Осталось мест: {remaining_spots}",
+            show_alert=True
+        )
+    else:
+        await callback.answer(
+            f"✅ Вы успешно откликнулись на заявку #{order_id}!\n"
+            f"⚠️ ВНИМАНИЕ: Вы последний! Набор закрыт.",
+            show_alert=True
+        )
     
-    # Обновляем кнопку в канале
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Вы откликнулись", callback_data=f"already_applied_{order_id}")]
-    ])
-    await callback.message.edit_reply_markup(reply_markup=keyboard)
+    # Отправляем личное сообщение пользователю с подтверждением
+    try:
+        await callback.bot.send_message(
+            callback.from_user.id,
+            f"✅ *Вы откликнулись на заявку #{order_id}!*\n\n"
+            f"Ожидайте звонка от администратора для подтверждения.\n"
+            f"Осталось мест: {remaining_spots} из {order.workers_count}",
+            parse_mode="Markdown"
+        )
+    except:
+        pass
 
 @router.callback_query(lambda c: c.data.startswith("resend_post_"))
 async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
+    await callback.answer()
     """Повторная отправка поста исполнителям"""
     order_id = int(callback.data.split("_")[2])
     

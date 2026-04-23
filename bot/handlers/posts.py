@@ -50,6 +50,7 @@ def format_post_text(order, city, price_per_person):
 
 @router.callback_query(lambda c: c.data.startswith("create_post_"))
 async def create_post_start(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    await callback.answer()
     """Начало создания поста для заявки"""
     order_id = int(callback.data.split("_")[2])
     
@@ -86,7 +87,7 @@ async def create_post_start(callback: CallbackQuery, state: FSMContext, db: Asyn
     for city in cities:
         keyboard.append([InlineKeyboardButton(text=city.name, callback_data=f"post_city_{city.id}")])
     keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")])
-    
+
     await callback.message.answer(
         "🏙️ *Выберите город для публикации поста:*\n\n"
         "Пост будет отправлен в Telegram-канал, привязанный к этому городу",
@@ -98,6 +99,7 @@ async def create_post_start(callback: CallbackQuery, state: FSMContext, db: Asyn
 
 @router.callback_query(PostStates.choosing_city, lambda c: c.data.startswith("post_city_"))
 async def choose_city_for_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    await callback.answer()
     """Выбор города для публикации"""
     city_id = int(callback.data.split("_")[2])
     
@@ -117,6 +119,10 @@ async def choose_city_for_post(callback: CallbackQuery, state: FSMContext, db: A
     await state.update_data(city_name=city.name)
     await state.update_data(channel_id=city.channel_id)
     
+    try:
+        await callback.message.delete()
+    except:
+        pass
     # Запрашиваем стоимость
     await callback.message.answer(
         f"💰 *Укажите стоимость оплаты для исполнителя*\n\n"
@@ -176,9 +182,8 @@ async def enter_price(message: Message, state: FSMContext, db: AsyncSession):
     
     await message.answer(
         f"📝 *Предпросмотр поста для канала {city.name}:*\n\n"
-        f"{post_text}\n\n"
+        f"{post_text}\n"
         f"---\n"
-        f"💰 Стоимость: {price} руб./чел.\n\n"
         f"Проверьте текст и выберите действие:",
         reply_markup=keyboard,
         parse_mode="Markdown"
@@ -187,9 +192,15 @@ async def enter_price(message: Message, state: FSMContext, db: AsyncSession):
 
 @router.callback_query(PostStates.confirming_post, lambda c: c.data == "edit_price")
 async def edit_price(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     """Редактирование стоимости"""
     await state.set_state(PostStates.entering_price)
-    
+
+    try:
+        await callback.message.delete()
+    except:
+        pass
+
     await callback.message.answer(
         "💰 *Введите новую стоимость:*\n"
         "Пример: 2500",
@@ -202,6 +213,7 @@ async def edit_price(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(PostStates.confirming_post, lambda c: c.data == "edit_post")
 async def edit_post_text(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     """Редактирование текста поста"""
     await state.set_state(PostStates.editing_post)
     
@@ -256,6 +268,7 @@ async def save_edited_post(message: Message, state: FSMContext):
 
 @router.callback_query(PostStates.confirming_post, lambda c: c.data == "publish_post")
 async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
+    await callback.answer()
     """Публикация поста в канал и рассылка исполнителям"""
     data = await state.get_data()
     order_id = data['order_id']
@@ -350,6 +363,11 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
         order.posted_at = datetime.now()
         await db.commit()
         
+        try:
+            await callback.message.delete()
+        except:
+            pass
+
         await callback.message.answer(
             f"✅ *Пост успешно опубликован!*\n\n"
             f"🏙️ Город: {city.name}\n"
@@ -369,6 +387,7 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
 
 @router.callback_query(lambda c: c.data == "cancel_edit")
 async def cancel_edit(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     """Отмена редактирования"""
     await state.set_state(PostStates.confirming_post)
     data = await state.get_data()
@@ -389,6 +408,7 @@ async def cancel_edit(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(lambda c: c.data == "cancel_post")
 async def cancel_post_callback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
     """Отмена создания поста (callback)"""
     await state.clear()
     await callback.message.answer("❌ Создание поста отменено")

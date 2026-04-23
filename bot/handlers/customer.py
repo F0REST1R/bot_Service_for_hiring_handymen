@@ -4,10 +4,11 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
-from bot.database.models import User, Customer, City, Order
+from bot.database.models import User, Customer, City, Order, Assignment, Worker
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
 from bot.utils.states import OrderStates
 from bot.config import settings
+import re
 
 router = Router()
 
@@ -292,3 +293,138 @@ async def cancel_order(message: Message, state: FSMContext):
         "❌ Создание заявки отменено",
         reply_markup=get_main_menu('customer')
     )
+
+@router.message(F.text == "ℹ️ Мои заявки")
+async def show_my_orders(message: Message, db: AsyncSession):
+    """Показать заявки текущего заказчика"""
+    # Получаем заказчика
+    result = await db.execute(
+        select(Customer).join(User).where(User.telegram_id == message.from_user.id)
+    )
+    customer = result.scalar_one_or_none()
+    
+    if not customer:
+        await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
+        return
+    
+    # Получаем все заявки заказчика
+    result = await db.execute(
+        select(Order, City)
+        .join(City, Order.city_id == City.id)
+        .where(Order.customer_id == customer.id)
+        .order_by(Order.created_at.desc())
+    )
+    orders = result.all()
+    
+    if not orders:
+        await message.answer("📭 У вас пока нет созданных заявок")
+        return
+    
+    text = "📋 *Мои заявки*\n\n"
+    for order, city in orders:
+        # Определяем статус
+        if order.status == 'active':
+            status_icon = "🟢"
+            status_text = "Активна"
+        else:
+            status_icon = "🔴"
+            status_text = "Закрыта"
+        
+        # Определяем, опубликован ли пост
+        post_status = "✅ Опубликован" if order.channel_post_id else "❌ Не опубликован"
+        
+        text += f"🆔 *Заявка #{order.id}*\n"
+        text += f"🏙️ Город: {city.name}\n"
+        text += f"📅 Дата: {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}\n"
+        text += f"👥 Человек: {order.workers_count}\n"
+        text += f"💰 Оплата: {order.price_per_person if order.price_per_person else 'не указана'} руб./чел.\n"
+        text += f"📊 Статус: {status_icon} {status_text}\n"
+        text += f"📢 Пост: {post_status}\n"
+        
+        # Количество откликнувшихся
+        assignments_result = await db.execute(
+            select(Assignment).where(Assignment.order_id == order.id)
+        )
+        assignments_count = len(assignments_result.scalars().all())
+        text += f"👥 Откликнулось: {assignments_count} чел.\n"
+        text += f"---\n\n"
+    
+    await message.answer(text, parse_mode="Markdown")
+
+@router.message(F.text.regexp(r'^Заявка\s+(\d+)$', flags=re.IGNORECASE))
+async def show_my_order_details(message: Message, db: AsyncSession):
+    """Показать детали заявки по ID для заказчика"""
+    import re
+    match = re.match(r'^Заявка\s+(\d+)$', message.text, re.IGNORECASE)
+    if not match:
+        return  # Не наша команда, игнорируем
+    
+    order_id = int(match.group(1))
+    
+    # Получаем заказчика
+    result = await db.execute(
+        select(Customer).join(User).where(User.telegram_id == message.from_user.id)
+    )
+    customer = result.scalar_one_or_none()
+    
+    if not customer:
+        await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
+        return
+    
+    # Получаем заявку и проверяем, что она принадлежит этому заказчику
+    result = await db.execute(
+        select(Order, City)
+        .join(City, Order.city_id == City.id)
+        .where(Order.id == order_id, Order.customer_id == customer.id)
+    )
+    order_data = result.first()
+    
+    if not order_data:
+        await message.answer(f"❌ Заявка с ID {order_id} не найдена или не принадлежит вам")
+        return
+    
+    order, city = order_data
+    
+    # Получаем откликнувшихся
+    assignments_result = await db.execute(
+        select(Assignment, Worker)
+        .join(Worker, Assignment.worker_id == Worker.id)
+        .where(Assignment.order_id == order_id)
+    )
+    assignments = assignments_result.all()
+    
+    # Статус
+    status_icon = "🟢" if order.status == 'active' else "🔴"
+    status_text = "Активна" if order.status == 'active' else "Закрыта"
+    
+    post_status = "✅ Опубликован" if order.channel_post_id else "❌ Не опубликован"
+    
+    text = f"""
+📋 *ДЕТАЛИ ЗАЯВКИ* 🆔 #{order.id}
+
+🏢 *Заказчик:* {order.full_name}
+📞 *Телефон:* {order.contact_phone}
+👥 *Количество человек:* {order.workers_count}
+📝 *Суть работы:* {order.work_description}
+🕐 *Дата и время:* {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
+⏱️ *Время занятости:* {order.estimated_hours} ч.
+🏙️ *Город:* {city.name}
+📍 *Адрес:* {order.address}
+👤 *Username:* @{order.username_for_contact if order.username_for_contact else 'не указан'}
+💰 *Оплата:* {order.price_per_person if order.price_per_person else 'не указана'} руб./чел.
+
+📊 *Статус:* {status_icon} {status_text}
+📢 *Пост:* {post_status}
+📅 *Создана:* {order.created_at.strftime('%d.%m.%Y %H:%M')}
+"""
+    
+    if assignments:
+        text += f"\n👥 *Откликнувшиеся исполнители:* ({len(assignments)} чел.)\n"
+        for i, (assignment, worker) in enumerate(assignments, 1):
+            text += f"\n{i}. *{worker.full_name}*\n"
+            text += f"   📞 Телефон: {worker.phone}\n"
+            text += f"   📌 Отклик: {assignment.assigned_at.strftime('%d.%m.%Y %H:%M')}"
+    else:
+        text += "\n📭 *Откликнувшиеся исполнители:* пока нет"
+    
+    await message.answer(text, parse_mode="Markdown")

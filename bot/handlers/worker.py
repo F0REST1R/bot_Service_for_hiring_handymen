@@ -171,6 +171,7 @@ async def back_to_main_menu(message: Message, state: FSMContext, db: AsyncSessio
 
 @router.callback_query(lambda c: c.data.startswith("apply_order_"))
 async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
+    await callback.answer()
     """Обработчик нажатия кнопки 'Я поеду' в боте"""
     order_id = int(callback.data.split("_")[2])
     
