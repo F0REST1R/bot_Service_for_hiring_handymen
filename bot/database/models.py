@@ -91,7 +91,8 @@ class Order(Base):
     is_active_for_today = Column(Boolean, default=True)
     channel_post_id = Column(Integer, nullable=True)
     posted_at = Column(DateTime, nullable=True)
-    price_per_person = Column(Integer, nullable=True)  
+    price_per_person = Column(Integer, nullable=True)
+    reminder_sent = Column(Boolean, default=False)
     
     # Связи
     customer = relationship("Customer")

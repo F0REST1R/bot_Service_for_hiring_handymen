@@ -9,7 +9,7 @@ from bot.database.models import User, City, Order, Assignment, Worker, worker_ci
 from bot.utils.states import AdminStates
 from bot.config import settings
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
-from bot.handlers import posts
+from bot.handlers.posts import format_post_text
 import re
 
 router = Router()
@@ -171,6 +171,10 @@ async def show_order_details(message: Message, db: AsyncSession):
             [InlineKeyboardButton(text="📢 Пост создан", callback_data="post_already_created")]
         )
     
+    if order.channel_post_id:
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔄 Повторно отправить", callback_data=f"resend_post_{order.id}")]
+        )
     await message.answer(order_text, reply_markup=keyboard if keyboard.inline_keyboard else None, parse_mode="Markdown")
 
 @router.callback_query(lambda c: c.data.startswith("close_order_"))
@@ -773,3 +777,59 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
         [InlineKeyboardButton(text="✅ Вы откликнулись", callback_data=f"already_applied_{order_id}")]
     ])
     await callback.message.edit_reply_markup(reply_markup=keyboard)
+
+@router.callback_query(lambda c: c.data.startswith("resend_post_"))
+async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
+    """Повторная отправка поста исполнителям"""
+    order_id = int(callback.data.split("_")[2])
+    
+    # Получаем заявку и город
+    result = await db.execute(
+        select(Order, City)
+        .join(City, Order.city_id == City.id)
+        .where(Order.id == order_id)
+    )
+    order_data = result.first()
+    
+    if not order_data:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+    
+    order, city = order_data
+    
+    if not order.price_per_person:
+        await callback.answer("Сначала укажите стоимость в заявке", show_alert=True)
+        return
+    
+    # Формируем текст поста
+    post_text = format_post_text(order, city, order.price_per_person)
+    
+    # Клавиатура для отклика
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order_id}")]
+    ])
+    
+    # Отправляем исполнителям
+    result = await db.execute(
+        select(User, Worker)
+        .join(Worker, User.id == Worker.user_id)
+        .join(worker_city, Worker.id == worker_city.c.worker_id)
+        .where(worker_city.c.city_id == city.id)
+        .where(User.is_registered == True)
+    )
+    workers = result.all()
+    
+    sent = 0
+    for user, worker in workers:
+        try:
+            await bot.send_message(
+                chat_id=user.telegram_id,
+                text=f"🔔 *Новая заявка в вашем городе!*\n\n{post_text}",
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+            sent += 1
+        except Exception as e:
+            print(f"Не удалось отправить {user.telegram_id}: {e}")
+    
+    await callback.answer(f"✅ Отправлено {sent} исполнителям")

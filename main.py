@@ -7,6 +7,7 @@ from bot.config import settings
 from bot.database.database import init_db
 from bot.handlers import posts, registration, customer, worker, admin, posts
 from bot.database.database import get_db
+from bot.utils.scheduler import start_scheduler
 
 logging.basicConfig(level=logging.INFO)
 
@@ -42,6 +43,8 @@ async def main():
     
     # Передаём bot в middleware для отправки уведомлений
     dp['bot'] = bot
+    
+    await start_scheduler(bot)
     
     # Регистрация роутеров
     dp.include_router(registration.router)

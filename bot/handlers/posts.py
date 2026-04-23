@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
-from bot.database.models import Order, City, Worker, Assignment, worker_city
+from bot.database.models import Order, City, Worker, Assignment, worker_city, User
 from bot.utils.states import PostStates
 from bot.config import settings
 from bot.keyboards.reply import get_main_menu
@@ -12,30 +12,36 @@ from bot.keyboards.reply import get_main_menu
 router = Router()
 
 def format_post_text(order, city, price_per_person):
-    """Форматирование текста поста для канала"""
+    """Форматирование текста поста для канала и рассылки"""
     # Получаем дату из заявки
     if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
         date_text = order.start_datetime_text
+        # Пытаемся извлечь дату и время отдельно
+        parts = date_text.split()
+        if len(parts) >= 2:
+            date_str = parts[0]
+            time_str = parts[1]
+        else:
+            date_str = date_text
+            time_str = "уточняется"
     else:
-        date_text = order.start_datetime.strftime('%d.%m.%Y %H:%M')
+        date_str = order.start_datetime.strftime('%d.%m.%Y')
+        time_str = order.start_datetime.strftime('%H:%M')
     
     text = f"""
-🏗️ *НОВАЯ ЗАЯВКА НА РАБОТУ!*
+🏗️ *ЗАЯВКА НА РАБОТУ*
 
-📋 *Описание работ:*
-{order.work_description}
-
-👥 *Требуется человек:* {order.workers_count}
-
-💰 *Оплата:* {price_per_person} руб./чел.
-
-📅 *Дата и время:* {date_text}
+📅 *Дата:* {date_str}
+🕐 *Время:* {time_str}
 
 📍 *Адрес:* {order.address}
 
-⏱️ *Ориентировочное время:* {order.estimated_hours} ч.
+👥 *Требуется человек:* {order.workers_count}
 
-🏙️ *Город:* {city.name}
+📝 *Суть работы:*
+{order.work_description}
+
+💰 *Оплата:* {price_per_person} ₽
 
 ---
 Нажмите кнопку "✅ Я поеду", чтобы откликнуться на заявку!
@@ -250,7 +256,7 @@ async def save_edited_post(message: Message, state: FSMContext):
 
 @router.callback_query(PostStates.confirming_post, lambda c: c.data == "publish_post")
 async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
-    """Публикация поста в канал"""
+    """Публикация поста в канал и рассылка исполнителям"""
     data = await state.get_data()
     order_id = data['order_id']
     city_id = data['city_id']
@@ -274,14 +280,70 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
         [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order_id}")]
     ])
     
+    # Формируем красивый текст для поста
+    # Получаем дату
+    if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
+        date_text = order.start_datetime_text
+    else:
+        date_text = order.start_datetime.strftime('%d.%m.%Y %H:%M')
+    
+    # Парсим дату и время
+    post_text = f"""
+🏗️ *ЗАЯВКА НА РАБОТУ*
+
+📅 *Дата:* {order.start_datetime.strftime('%d.%m.%Y') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text.split()[0]}
+🕐 *Время:* {order.start_datetime.strftime('%H:%M') if not hasattr(order, 'start_datetime_text') else 'уточняется'}
+
+📍 *Адрес:* {order.address}
+
+👥 *Требуется человек:* {order.workers_count}
+
+📝 *Суть работы:*
+{order.work_description}
+
+💰 *Оплата:* {price_per_person} ₽
+
+---
+Нажмите кнопку "✅ Я поеду", чтобы откликнуться на заявку!
+"""
+    
     try:
-        # Отправляем пост в канал
+        # 1. Отправляем пост в канал
         sent_message = await bot.send_message(
             chat_id=channel_id,
             text=post_text,
             reply_markup=keyboard,
             parse_mode="Markdown"
         )
+        
+        # 2. Отправляем пост исполнителям, выбравшим этот город
+        # Получаем всех исполнителей, у которых выбран этот город
+        result = await db.execute(
+            select(User, Worker)
+            .join(Worker, User.id == Worker.user_id)
+            .join(worker_city, Worker.id == worker_city.c.worker_id)
+            .where(worker_city.c.city_id == city_id)
+            .where(User.is_registered == True)
+        )
+        workers = result.all()
+        
+        sent_to_workers = 0
+        for user, worker in workers:
+            try:
+                # Создаём клавиатуру для отклика в боте
+                worker_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order_id}")]
+                ])
+                
+                await bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=f"🔔 *Новая заявка в вашем городе!*\n\n{post_text}",
+                    reply_markup=worker_keyboard,
+                    parse_mode="Markdown"
+                )
+                sent_to_workers += 1
+            except Exception as e:
+                print(f"Не удалось отправить сообщение исполнителю {user.telegram_id}: {e}")
         
         # Обновляем заявку
         order.channel_post_id = sent_message.message_id
@@ -294,6 +356,7 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
             f"📢 Канал: {channel_id}\n"
             f"💰 Стоимость: {price_per_person} руб./чел.\n"
             f"🆔 ID сообщения: {sent_message.message_id}\n"
+            f"👥 Отправлено исполнителям: {sent_to_workers} чел.\n"
             f"📅 Время публикации: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
             parse_mode="Markdown"
         )
