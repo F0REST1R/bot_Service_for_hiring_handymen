@@ -152,9 +152,8 @@ async def show_order_details(message: Message, db: AsyncSession):
     else:
         order_text += "\n📭 *Откликнувшиеся исполнители:* нет\n"
     
-    # Кнопки для администратора
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-    
+
     if order.status == 'active':
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="🔒 Закрыть набор", callback_data=f"close_order_{order.id}")]
@@ -163,14 +162,15 @@ async def show_order_details(message: Message, db: AsyncSession):
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="🔓 Открыть набор", callback_data=f"open_order_{order.id}")]
         )
-    
+
+    # Кнопка создания поста (всегда показываем, если пост не создан)
     if not order.channel_post_id:
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"admin_create_post_{order.id}")]
         )
     else:
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="📢 Пост создан", callback_data="post_already_created")]
+            [InlineKeyboardButton(text="✅ Пост создан", callback_data="post_already_created")]
         )
     
     if order.channel_post_id:
