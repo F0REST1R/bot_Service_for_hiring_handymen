@@ -35,25 +35,13 @@ class AdminStates(StatesGroup):
     waiting_for_notification_text = State()
     waiting_for_order_close = State()
     waiting_for_channel_id_edit = State()
-    # Старые состояния для совместимости
     waiting_for_post_city = State()
     waiting_for_post_text = State()
-    waiting_for_post_buttons = State()
-    waiting_for_post_confirmation = State()
-    # Новые состояния для редактирования
-    waiting_for_edit_price = State()
-    waiting_for_edit_workers = State()
-    waiting_for_edit_date = State()
-    waiting_for_edit_address = State()
-    waiting_for_edit_desc = State()
 
 
 class PostStates(StatesGroup):
     """Состояния создания поста"""
     choosing_city = State()
-    editing_price = State()
-    editing_workers_count = State()
-    editing_date = State()
-    editing_address = State()
-    editing_description = State()
+    entering_price = State() 
+    editing_post = State()
     confirming_post = State()
