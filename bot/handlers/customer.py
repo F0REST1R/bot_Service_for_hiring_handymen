@@ -357,30 +357,48 @@ async def show_my_order_details(message: Message, db: AsyncSession):
     import re
     match = re.match(r'^Заявка\s+(\d+)$', message.text, re.IGNORECASE)
     if not match:
-        return  # Не наша команда, игнорируем
+        return
     
     order_id = int(match.group(1))
     
-    # Получаем заказчика
-    result = await db.execute(
-        select(Customer).join(User).where(User.telegram_id == message.from_user.id)
-    )
-    customer = result.scalar_one_or_none()
+    # Получаем пользователя
+    result = await db.execute(select(User).where(User.telegram_id == message.from_user.id))
+    user = result.scalar_one_or_none()
     
-    if not customer:
+    if not user:
         await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
         return
     
-    # Получаем заявку и проверяем, что она принадлежит этому заказчику
-    result = await db.execute(
-        select(Order, City)
-        .join(City, Order.city_id == City.id)
-        .where(Order.id == order_id, Order.customer_id == customer.id)
-    )
+    # Если админ - показываем все заявки
+    if user.role == 'admin':
+        # Получаем заявку без проверки принадлежности
+        result = await db.execute(
+            select(Order, City)
+            .join(City, Order.city_id == City.id)
+            .where(Order.id == order_id)
+        )
+    else:
+        # Получаем заказчика
+        result = await db.execute(
+            select(Customer).where(Customer.user_id == user.id)
+        )
+        customer = result.scalar_one_or_none()
+        
+        if not customer:
+            await message.answer("❌ Сначала зарегистрируйтесь как заказчик!")
+            return
+        
+        # Получаем заявку и проверяем, что она принадлежит этому заказчику
+        result = await db.execute(
+            select(Order, City)
+            .join(City, Order.city_id == City.id)
+            .where(Order.id == order_id, Order.customer_id == customer.id)
+        )
+    
     order_data = result.first()
     
     if not order_data:
-        await message.answer(f"❌ Заявка с ID {order_id} не найдена или не принадлежит вам")
+        await message.answer(f"❌ Заявка с ID {order_id} не найдена")
         return
     
     order, city = order_data
@@ -394,8 +412,12 @@ async def show_my_order_details(message: Message, db: AsyncSession):
     assignments = assignments_result.all()
     
     # Статус
-    status_icon = "🟢" if order.status == 'active' else "🔴"
-    status_text = "Активна" if order.status == 'active' else "Закрыта"
+    if user.role == 'admin':
+        status_icon = "❌" if order.status == 'active' else "✅"
+        status_text = "Набор открыт" if order.status == 'active' else "Набор закрыт"
+    else:
+        status_icon = "🟢" if order.status == 'active' else "🔴"
+        status_text = "Активна" if order.status == 'active' else "Закрыта"
     
     post_status = "✅ Опубликован" if order.channel_post_id else "❌ Не опубликован"
     

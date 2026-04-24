@@ -71,7 +71,7 @@ async def show_active_orders(message: Message, db: AsyncSession):
         text += f"💬 <b>Для просмотра деталей отправьте:</b> `Заявка {order.id}`\n"
         text += f"---\n\n"
     
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
 
 @router.message(F.text.regexp(r'^Заявка\s+(\d+)$', flags=re.IGNORECASE))
 async def show_order_details(message: Message, db: AsyncSession):
@@ -711,7 +711,7 @@ async def show_analytics(message: Message, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data.startswith("apply_order_"))
 async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
-    """Обработчик нажатия кнопки 'Я поеду' - универсальный"""
+    """Обработчик нажатия кнопки 'Я поеду' - универсальный, кнопка не меняется"""
     order_id = int(callback.data.split("_")[2])
     
     # Проверяем, зарегистрирован ли пользователь
@@ -859,7 +859,8 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
         )
     except:
         pass
-
+    
+    await callback.answer()
 @router.callback_query(lambda c: c.data.startswith("resend_post_"))
 async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
     await callback.answer()
