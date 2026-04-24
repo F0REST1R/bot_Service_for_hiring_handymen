@@ -1,16 +1,21 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime
-from bot.database.models import Order, City, Worker, Assignment, worker_city, User
+from bot.database.models import Order, City, Worker, worker_city, User
 from bot.utils.states import PostStates
 from bot.utils.time_utils import parse_datetime_moscow, format_datetime_moscow
 from bot.config import settings
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
 
 router = Router()
+
+async def is_admin(telegram_id: int, db: AsyncSession) -> bool:
+    result = await db.execute(select(User).where(User.telegram_id == telegram_id))
+    user = result.scalar_one_or_none()
+    return user is not None and user.role == 'admin'
 
 @router.message(F.text == "📝 Создать пост")
 async def create_post_start(message: Message, state: FSMContext, db: AsyncSession):
@@ -115,7 +120,6 @@ async def create_post_date(message: Message, state: FSMContext):
         await message.answer("❌ Неверный формат! Используйте: ДД.ММ.ГГГГ ЧЧ:ММ\nПример: 25.05.2026 10:15")
         return
     
-    # Проверяем, что дата не в прошлом (сравниваем с текущим UTC)
     if start_datetime < datetime.now():
         await message.answer("❌ Дата и время не могут быть в прошлом! Укажите будущую дату.")
         return
@@ -153,7 +157,6 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     await state.update_data(work_description=message.text)
     data = await state.get_data()
     
-    # Создаём заявку с корректным временем
     new_order = Order(
         customer_id=None,
         city_id=data['city_id'],
@@ -161,7 +164,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
         contact_phone="",
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=data['start_datetime'],  # Уже в UTC
+        start_datetime=data['start_datetime'],
         estimated_hours=0,
         address=data['address'],
         username_for_contact=None,
@@ -172,13 +175,12 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     await db.commit()
     await db.refresh(new_order)
     
-    # Формируем текст поста с московским временем
     moscow_time = format_datetime_moscow(data['start_datetime'])
     post_text = f"""
 🏗️ *ЗАЯВКА НА РАБОТУ*
 
 📅 *Дата:* {data['start_datetime_text']}
-🕐 *Время:* {moscow_time.split()[1]}
+🕐 *Время:* {moscow_time.split()[1] if ' ' in moscow_time else moscow_time}
 
 📍 *Адрес:* {data['address']}
 
@@ -205,7 +207,6 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
             parse_mode="Markdown"
         )
         
-        # Рассылка исполнителям
         result = await db.execute(
             select(User, Worker)
             .join(Worker, User.id == Worker.user_id)
@@ -249,11 +250,6 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
         await db.commit()
     
     await state.clear()
-
-async def is_admin(telegram_id: int, db: AsyncSession) -> bool:
-    result = await db.execute(select(User).where(User.telegram_id == telegram_id))
-    user = result.scalar_one_or_none()
-    return user is not None and user.role == 'admin'
 
 async def cancel_create_post(message: Message, state: FSMContext):
     await state.clear()
