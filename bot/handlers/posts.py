@@ -1,52 +1,52 @@
-# from aiogram import Router, F
-# from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-# from aiogram.fsm.context import FSMContext
-# from sqlalchemy.ext.asyncio import AsyncSession
-# from sqlalchemy import select
-# from datetime import datetime
-# from bot.database.models import Order, City, Worker, Assignment, worker_city, User
-# from bot.utils.states import PostStates
-# from bot.config import settings
-# from bot.keyboards.reply import get_main_menu
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from datetime import datetime
+from bot.database.models import Order, City, Worker, Assignment, worker_city, User
+from bot.utils.states import PostStates
+from bot.config import settings
+from bot.keyboards.reply import get_main_menu
 
-# router = Router()
+router = Router()
 
-# def format_post_text(order, city, price_per_person):
-#     """Форматирование текста поста для канала и рассылки"""
-#     # Получаем дату из заявки
-#     if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
-#         date_text = order.start_datetime_text
-#         # Пытаемся извлечь дату и время отдельно
-#         parts = date_text.split()
-#         if len(parts) >= 2:
-#             date_str = parts[0]
-#             time_str = parts[1]
-#         else:
-#             date_str = date_text
-#             time_str = "уточняется"
-#     else:
-#         date_str = order.start_datetime.strftime('%d.%m.%Y')
-#         time_str = order.start_datetime.strftime('%H:%M')
+def format_post_text(order, city, price_per_person):
+    """Форматирование текста поста для канала и рассылки"""
+    # Получаем дату из заявки
+    if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
+        date_text = order.start_datetime_text
+        # Пытаемся извлечь дату и время отдельно
+        parts = date_text.split()
+        if len(parts) >= 2:
+            date_str = parts[0]
+            time_str = parts[1]
+        else:
+            date_str = date_text
+            time_str = "уточняется"
+    else:
+        date_str = order.start_datetime.strftime('%d.%m.%Y')
+        time_str = order.start_datetime.strftime('%H:%M')
     
-#     text = f"""
-# 🏗️ *ЗАЯВКА НА РАБОТУ*
+    text = f"""
+🏗️ *ЗАЯВКА НА РАБОТУ*
 
-# 📅 *Дата:* {date_str}
-# 🕐 *Время:* {time_str}
+📅 *Дата:* {date_str}
+🕐 *Время:* {time_str}
 
-# 📍 *Адрес:* {order.address}
+📍 *Адрес:* {order.address}
 
-# 👥 *Требуется человек:* {order.workers_count}
+👥 *Требуется человек:* {order.workers_count}
 
-# 📝 *Суть работы:*
-# {order.work_description}
+📝 *Суть работы:*
+{order.work_description}
 
-# 💰 *Оплата:* {price_per_person} ₽
+💰 *Оплата:* {price_per_person} ₽
 
-# ---
-# Нажмите кнопку "✅ Я поеду", чтобы откликнуться на заявку!
-# """
-#     return text
+---
+Нажмите кнопку "✅ Я поеду", чтобы откликнуться на заявку!
+"""
+    return text
 
 # @router.callback_query(lambda c: c.data.startswith("post_create_"))
 # async def create_post_start(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
