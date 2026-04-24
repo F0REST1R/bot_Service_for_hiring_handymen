@@ -916,3 +916,242 @@ async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSessi
             print(f"Не удалось отправить {user.telegram_id}: {e}")
     
     await callback.answer(f"✅ Отправлено {sent} исполнителям")
+
+@router.message(F.text == "📝 Создать пост")
+async def create_custom_post_start(message: Message, state: FSMContext, db: AsyncSession):
+    """Начало создания произвольного поста"""
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("⛔ У вас нет доступа к этой функции")
+        return
+    
+    # Получаем список городов с каналами
+    result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
+    cities = result.scalars().all()
+    
+    if not cities:
+        await message.answer(
+            "❌ Нет доступных городов с привязанными каналами!\n\n"
+            "Сначала добавьте город и привяжите к нему Telegram-канал в 'Управление городами'"
+        )
+        return
+    
+    keyboard = []
+    for city in cities:
+        keyboard.append([InlineKeyboardButton(
+            text=f"🏙️ {city.name} (📢 {city.channel_id})",
+            callback_data=f"custom_post_city_{city.id}"
+        )])
+    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_custom_post")])
+    
+    await message.answer(
+        "📝 *Создание поста в канал*\n\n"
+        "Выберите город (канал), в который хотите отправить пост:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+        parse_mode="Markdown"
+    )
+    await state.set_state(AdminStates.waiting_for_post_city)
+
+@router.callback_query(AdminStates.waiting_for_post_city, lambda c: c.data.startswith("custom_post_city_"))
+async def custom_post_city_selected(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    """Выбор города для поста"""
+    city_id = int(callback.data.split("_")[3])
+    
+    result = await db.execute(select(City).where(City.id == city_id))
+    city = result.scalar_one()
+    
+    await state.update_data(post_city_id=city_id)
+    await state.update_data(post_city_name=city.name)
+    await state.update_data(post_channel_id=city.channel_id)
+    
+    await state.set_state(AdminStates.waiting_for_post_text)
+    
+    await callback.message.answer(
+        f"📝 *Создание поста в канал* (г. {city.name})\n\n"
+        "Введите текст поста.\n\n"
+        "Поддерживается Markdown разметка:\n"
+        "• *жирный текст*\n"
+        "• _курсив_\n"
+        "• [ссылка](url)\n\n"
+        "Также можно добавить кнопки (см. инструкцию):\n"
+        "Кнопка: текст|url\n\n"
+        "Или отправьте 'Пропустить' чтобы добавить пост без кнопок",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_custom_post")]
+        ])
+    )
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_post_text)
+async def custom_post_text(message: Message, state: FSMContext):
+    """Получение текста поста"""
+    if message.text == "❌ Отмена":
+        await cancel_custom_post(message, state)
+        return
+    
+    await state.update_data(post_text=message.text)
+    await state.set_state(AdminStates.waiting_for_post_buttons)
+    
+    await message.answer(
+        "🔘 *Добавление кнопок*\n\n"
+        "Отправьте кнопки в формате:\n"
+        "кнопка1|url1\n"
+        "кнопка2|url2\n\n"
+        "Каждая кнопка с новой строки.\n\n"
+        "Или отправьте 'Пропустить' чтобы добавить пост без кнопок",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="skip_buttons")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_custom_post")]
+        ])
+    )
+
+@router.message(AdminStates.waiting_for_post_buttons)
+async def custom_post_buttons(message: Message, state: FSMContext):
+    """Получение кнопок"""
+    if message.text == "❌ Отмена":
+        await cancel_custom_post(message, state)
+        return
+    
+    buttons = []
+    if message.text != "Пропустить":
+        lines = message.text.strip().split('\n')
+        for line in lines:
+            if '|' in line:
+                text, url = line.split('|', 1)
+                buttons.append([InlineKeyboardButton(text=text.strip(), url=url.strip())])
+    
+    await state.update_data(post_buttons=buttons)
+    await state.set_state(AdminStates.waiting_for_post_confirmation)
+    
+    data = await state.get_data()
+    
+    # Показываем предпросмотр
+    preview_text = f"📝 *Предпросмотр поста*\n\n{data['post_text']}"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+    
+    await message.answer(
+        preview_text,
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+    
+    await message.answer(
+        "✅ *Подтверждение публикации*\n\n"
+        f"🏙️ Город: {data['post_city_name']}\n"
+        f"📢 Канал: {data['post_channel_id']}\n"
+        f"🔘 Кнопок: {len(buttons)}\n\n"
+        "Всё верно?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Опубликовать", callback_data="confirm_custom_post")],
+            [InlineKeyboardButton(text="✏️ Редактировать текст", callback_data="edit_custom_post_text")],
+            [InlineKeyboardButton(text="🔘 Редактировать кнопки", callback_data="edit_custom_post_buttons")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_custom_post")]
+        ])
+    )
+
+@router.callback_query(lambda c: c.data == "skip_buttons")
+async def skip_buttons(callback: CallbackQuery, state: FSMContext):
+    """Пропустить добавление кнопок"""
+    await state.update_data(post_buttons=[])
+    await state.set_state(AdminStates.waiting_for_post_confirmation)
+    
+    data = await state.get_data()
+    
+    # Показываем предпросмотр
+    preview_text = f"📝 *Предпросмотр поста*\n\n{data['post_text']}"
+    
+    await callback.message.answer(preview_text, parse_mode="Markdown")
+    
+    await callback.message.answer(
+        "✅ *Подтверждение публикации*\n\n"
+        f"🏙️ Город: {data['post_city_name']}\n"
+        f"📢 Канал: {data['post_channel_id']}\n"
+        f"🔘 Кнопок: 0\n\n"
+        "Всё верно?",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Опубликовать", callback_data="confirm_custom_post")],
+            [InlineKeyboardButton(text="✏️ Редактировать текст", callback_data="edit_custom_post_text")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_custom_post")]
+        ])
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "edit_custom_post_text")
+async def edit_custom_post_text(callback: CallbackQuery, state: FSMContext):
+    """Редактирование текста поста"""
+    await state.set_state(AdminStates.waiting_for_post_text)
+    
+    await callback.message.answer(
+        "✏️ *Введите новый текст поста:*",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_custom_post")]
+        ])
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "edit_custom_post_buttons")
+async def edit_custom_post_buttons(callback: CallbackQuery, state: FSMContext):
+    """Редактирование кнопок"""
+    await state.set_state(AdminStates.waiting_for_post_buttons)
+    
+    await callback.message.answer(
+        "🔘 *Введите новые кнопки:*\n\n"
+        "Формат: текст|url\n"
+        "Каждая кнопка с новой строки\n\n"
+        "Или отправьте 'Пропустить' чтобы удалить все кнопки",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⏭️ Пропустить", callback_data="skip_buttons")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_custom_post")]
+        ])
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "confirm_custom_post")
+async def confirm_custom_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
+    """Подтверждение и отправка поста"""
+    data = await state.get_data()
+    channel_id = data['post_channel_id']
+    post_text = data['post_text']
+    buttons = data.get('post_buttons', [])
+    city_name = data['post_city_name']
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+    
+    try:
+        sent_message = await bot.send_message(
+            chat_id=channel_id,
+            text=post_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        await callback.message.answer(
+            f"✅ *Пост успешно опубликован!*\n\n"
+            f"🏙️ Город: {city_name}\n"
+            f"📢 Канал: {channel_id}\n"
+            f"🆔 ID сообщения: {sent_message.message_id}\n"
+            f"📅 Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        await callback.message.answer(f"❌ Ошибка при публикации: {str(e)}")
+    
+    await state.clear()
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "cancel_custom_post")
+async def cancel_custom_post_callback(callback: CallbackQuery, state: FSMContext):
+    """Отмена создания поста (callback)"""
+    await state.clear()
+    await callback.message.answer("❌ Создание поста отменено")
+    await callback.answer()
+
+async def cancel_custom_post(message: Message, state: FSMContext):
+    """Отмена создания поста (из сообщения)"""
+    await state.clear()
+    await message.answer("❌ Создание поста отменено")

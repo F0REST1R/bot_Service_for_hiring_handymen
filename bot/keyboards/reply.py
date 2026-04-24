@@ -18,6 +18,7 @@ def get_main_menu(role: str):
             [KeyboardButton(text="📋 Активные заявки")],
             [KeyboardButton(text="🏙️ Управление городами")],
             [KeyboardButton(text="📢 Уведомления")],
+            [KeyboardButton(text="📝 Создать пост")],
             [KeyboardButton(text="📊 Аналитика")]
         ]
     
