@@ -5,7 +5,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from bot.config import settings
 from bot.database.database import init_db
-from bot.handlers import posts, registration, customer, worker, admin, posts, post_creator
+from bot.handlers import posts, registration, customer, worker, admin, posts
 from bot.database.database import get_db
 from bot.utils.scheduler import start_scheduler
 
@@ -52,7 +52,6 @@ async def main():
     dp.include_router(worker.router)
     dp.include_router(admin.router)
     dp.include_router(posts.router)
-    dp.include_router(post_creator.router)
     
     logging.info("Bot started successfully!")
     
