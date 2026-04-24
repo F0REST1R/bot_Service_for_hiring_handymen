@@ -30,10 +30,6 @@ async def show_active_orders(message: Message, db: AsyncSession):
         await message.answer("⛔ У вас нет доступа к этой функции")
         return
     
-    from bot.utils.time_utils import format_datetime_moscow
-    from datetime import timedelta
-    import pytz
-    
     # Получаем текущее московское время
     moscow_tz = pytz.timezone('Europe/Moscow')
     now_moscow = datetime.now(moscow_tz)
@@ -73,7 +69,13 @@ async def show_active_orders(message: Message, db: AsyncSession):
         )
         assignments = assignments_result.scalars().all()
         assignments_count = len(assignments)
-        
+
+        # Статус публикации поста
+        if order.channel_post_id:
+            post_status = "✅ Опубликован"
+        else:
+            post_status = "❌ Не опубликован"
+
         # Определяем статус набора
         if assignments_count >= order.workers_count:
             status_icon = "✅"
@@ -88,6 +90,7 @@ async def show_active_orders(message: Message, db: AsyncSession):
         text += f"🕐 Время: {moscow_time.strftime('%d.%m.%Y %H:%M')}\n"
         text += f"👥 Требуется: {order.workers_count} чел.\n"
         text += f"📌 Откликнулось: {assignments_count} чел.\n"
+        text += f"📢 Пост: {post_status}\n"
         text += f"{status_icon} {status_text}\n"
         text += f"---\n\n"
     
@@ -124,11 +127,17 @@ async def show_order_details(message: Message, db: AsyncSession):
     
     # Получаем всех откликнувшихся рабочих
     assignments_result = await db.execute(
-        select(Assignment).where(Assignment.order_id == order.id)
+        select(Assignment, Worker, User)
+        .join(Worker, Assignment.worker_id == Worker.id)
+        .join(User, Worker.user_id == User.id)
+        .where(Assignment.order_id == order_id)
     )
-    assignments = assignments_result.scalars().all()
+    assignments = assignments_result.all()
+    
+    # Получаем количество откликнувшихся
     assignments_count = len(assignments)
-
+    
+    # Определяем статус набора по количеству откликнувшихся
     if assignments_count >= order.workers_count:
         status_icon = "✅"
         status_text = "Набор закрыт (все места заняты)"
@@ -136,7 +145,9 @@ async def show_order_details(message: Message, db: AsyncSession):
         status_icon = "❌"
         status_text = "Набор открыт"
     
-    # Формируем текст заявки
+    # Формируем текст заявки с правильным временем
+    from bot.utils.time_utils import format_datetime_moscow
+    
     order_text = f"""
 📋 *ДЕТАЛИ ЗАЯВКИ* 🆔 #{order.id}
 
@@ -149,26 +160,29 @@ async def show_order_details(message: Message, db: AsyncSession):
 🏙️ *Город:* {city.name}
 📍 *Адрес:* {order.address}
 👤 *Username:* @{order.username_for_contact if order.username_for_contact else 'не указан'}
-💰 *Оплата:* {order.price_per_person} руб./чел. {'(не указана)' if not order.price_per_person else ''}
+💰 *Оплата:* {order.price_per_person if order.price_per_person else 'не указана'} руб./чел.
 
 📊 *Статус:* {status_icon} {status_text}
-📅 *Создана:* {order.created_at.strftime('%d.%m.%Y %H:%M')}
+📢 *Пост:* {'✅ Опубликован' if order.channel_post_id else '❌ Не опубликован'}
+📅 *Создана:* {format_datetime_moscow(order.created_at)}
 """
 
     # Добавляем информацию об откликнувшихся
     if assignments:
-        order_text += f"\n👥 *Откликнувшиеся исполнители:* ({len(assignments)} чел.)\n\n"
+        order_text += f"\n👥 *Откликнувшиеся исполнители:* ({assignments_count} чел.)\n\n"
         for i, (assignment, worker, user) in enumerate(assignments, 1):
             order_text += f"{i}. *{worker.full_name}*\n"
             order_text += f"   📞 Телефон: {worker.phone}\n"
             order_text += f"   📅 Возраст: {worker.age}\n"
             order_text += f"   🌍 Гражданство: {worker.citizenship}\n"
-            order_text += f"   📌 Отклик: {assignment.assigned_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            order_text += f"   📌 Отклик: {format_datetime_moscow(assignment.assigned_at)}\n\n"
     else:
         order_text += "\n📭 *Откликнувшиеся исполнители:* нет\n"
     
+    # Кнопки для администратора
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-
+    
+    # Кнопка закрыть/открыть набор
     if order.status == 'active':
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="🔒 Закрыть набор", callback_data=f"close_order_{order.id}")]
@@ -177,8 +191,8 @@ async def show_order_details(message: Message, db: AsyncSession):
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="🔓 Открыть набор", callback_data=f"open_order_{order.id}")]
         )
-
-    # Кнопка создания поста (всегда показываем, если пост не создан)
+    
+    # Кнопка создания поста
     if not order.channel_post_id:
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"admin_create_post_{order.id}")]
@@ -188,11 +202,13 @@ async def show_order_details(message: Message, db: AsyncSession):
             [InlineKeyboardButton(text="✅ Пост создан", callback_data="post_already_created")]
         )
     
+    # Кнопка повторной отправки (только если пост создан)
     if order.channel_post_id:
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="🔄 Повторно отправить", callback_data=f"resend_post_{order.id}")]
         )
-    await message.answer(order_text, reply_markup=keyboard if keyboard.inline_keyboard else None, parse_mode="Markdown")
+    
+    await message.answer(order_text, reply_markup=keyboard, parse_mode="Markdown")
 
 @router.callback_query(lambda c: c.data.startswith("close_order_"))
 async def close_order(callback: CallbackQuery, db: AsyncSession):
