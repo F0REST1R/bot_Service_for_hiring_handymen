@@ -921,7 +921,7 @@ async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSessi
     await callback.answer(f"✅ Отправлено {sent} исполнителям")
 
 @router.callback_query(lambda c: c.data.startswith("admin_create_post_"))
-async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
     """Создание поста из заявки администратором"""
     order_id = int(callback.data.split("_")[3])
     
@@ -941,27 +941,11 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
         await callback.answer(f"К городу {city.name} не привязан канал!", show_alert=True)
         return
     
-    # Сохраняем данные в состояние
-    await state.update_data(
-        order_id=order_id,
-        city_id=city.id,
-        city_name=city.name,
-        channel_id=city.channel_id,
-        price_per_person=order.price_per_person,
-        workers_count=order.workers_count,
-        start_datetime=order.start_datetime,
-        start_datetime_text=order.start_datetime.strftime('%d.%m.%Y %H:%M'),
-        estimated_hours=order.estimated_hours,
-        address=order.address,
-        work_description=order.work_description
-    )
-    
-    # Показываем предпросмотр поста
-    moscow_time = format_datetime_moscow(order.start_datetime)
+    # Формируем текст поста (НЕ сохраняем в состояние!)
     post_text = f"""
 🏗️ *ЗАЯВКА НА РАБОТУ*
 
-📅 *Дата:* {order.start_datetime.strftime('%d.%m.%Y %H:%M')}
+📅 *Дата:* {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
 
 📍 *Адрес:* {order.address}
 
@@ -979,13 +963,12 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
 """
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{order_id}")],
-        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_post_{order_id}")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")]
+        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"publish_post_{order.id}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_publish")]
     ])
     
     await callback.message.answer(
-        f"📝 *Предпросмотр поста для канала {city.name}:*\n\n{post_text}",
+        f"📝 *Предпросмотр поста для канала {city.name}:*\n\n{post_text}\n\nПодтвердите публикацию:",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
@@ -1043,6 +1026,71 @@ async def confirm_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
         await db.commit()
         
         await callback.message.answer(f"✅ *Пост успешно опубликован в канале {city.name}!*", parse_mode="Markdown")
+        
+    except Exception as e:
+        await callback.message.answer(f"❌ Ошибка при публикации: {str(e)}")
+    
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("publish_post_"))
+async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
+    """Непосредственная публикация поста"""
+    order_id = int(callback.data.split("_")[2])
+    
+    # Получаем заявку и город
+    result = await db.execute(select(Order, City).join(City, Order.city_id == City.id).where(Order.id == order_id))
+    order_data = result.first()
+    
+    if not order_data:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+    
+    order, city = order_data
+    
+    if order.channel_post_id:
+        await callback.answer("Пост уже создан!", show_alert=True)
+        return
+    
+    post_text = f"""
+🏗️ *ЗАЯВКА НА РАБОТУ*
+
+📅 *Дата:* {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
+
+📍 *Адрес:* {order.address}
+
+👥 *Требуется человек:* {order.workers_count}
+
+⏱️ *Продолжительность:* {order.estimated_hours} ч.
+
+📝 *Суть работы:*
+{order.work_description}
+
+💰 *Оплата:* {order.price_per_person if order.price_per_person else 'не указана'} ₽
+
+---
+Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
+"""
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order.id}")]
+    ])
+    
+    try:
+        sent_message = await bot.send_message(
+            chat_id=city.channel_id,
+            text=post_text,
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+        
+        order.channel_post_id = sent_message.message_id
+        order.posted_at = datetime.now()
+        await db.commit()
+        
+        await callback.message.answer(f"✅ *Пост успешно опубликован в канале {city.name}!*", parse_mode="Markdown")
+        
+        # Обновляем детали заявки
+        await show_order_details(callback.message, db)
         
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка при публикации: {str(e)}")
