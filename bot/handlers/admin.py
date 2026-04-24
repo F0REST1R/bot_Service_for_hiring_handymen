@@ -40,7 +40,6 @@ async def show_active_orders(message: Message, db: AsyncSession):
     result = await db.execute(
         select(Order, City)
         .join(City, Order.city_id == City.id)
-        .where(Order.status == 'active')
         .order_by(Order.start_datetime)
     )
     all_orders = result.all()
@@ -181,17 +180,7 @@ async def show_order_details(message: Message, db: AsyncSession):
     
     # Кнопки для администратора
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
-    
-    # Кнопка закрыть/открыть набор
-    if order.status == 'active':
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="🔒 Закрыть набор", callback_data=f"close_order_{order.id}")]
-        )
-    else:
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="🔓 Открыть набор", callback_data=f"open_order_{order.id}")]
-        )
-    
+        
     # Кнопка создания поста
     if not order.channel_post_id:
         keyboard.inline_keyboard.append(
@@ -200,6 +189,16 @@ async def show_order_details(message: Message, db: AsyncSession):
     else:
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="✅ Пост создан", callback_data="post_already_created")]
+        )
+
+    # Кнопка закрыть/открыть набор
+    if order.status == 'active':
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔒 Закрыть набор", callback_data=f"close_order_{order.id}")]
+        )
+    else:
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔓 Открыть набор", callback_data=f"open_order_{order.id}")]
         )
     
     # Кнопка повторной отправки (только если пост создан)
