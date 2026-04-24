@@ -127,8 +127,7 @@ async def order_work_description(message: Message, state: FSMContext):
     
     await message.answer(
         "📅 Введите дату и время начала работ:\n\n"
-        "Пример: 25 апреля 2026, 10:00\n"
-        "Любой удобный для вас формат",
+        "Пример: 25.05.2026, 10:00",
         reply_markup=get_cancel_keyboard()
     )
     await state.set_state(OrderStates.start_datetime)
@@ -161,9 +160,9 @@ async def order_start_datetime(message: Message, state: FSMContext):
         )
         return
     
-    # Сохраняем как строку и как объект
+    # Сохраняем ТОЛЬКО строку, НЕ сохраняем datetime объект
     await state.update_data(
-        start_datetime=start_datetime,
+        start_datetime_str=start_datetime.isoformat(),
         start_datetime_text=message.text
     )
     
@@ -183,7 +182,6 @@ async def order_estimated_hours(message: Message, state: FSMContext, db: AsyncSe
         return
     
     try:
-        # Заменяем запятую на точку
         hours = float(message.text.replace(',', '.'))
         if hours <= 0:
             await message.answer("❌ Время занятости должно быть больше 0")
@@ -258,11 +256,18 @@ async def order_address(message: Message, state: FSMContext, db: AsyncSession):
     await state.update_data(username_for_contact=username_for_contact)
     
     data = await state.get_data()
-
-    start_datetime = data.get('start_datetime')
-    if not start_datetime and data.get('start_datetime_text'):
-        start_datetime = parse_datetime_moscow(data['start_datetime_text'])
-
+    
+    # Восстанавливаем datetime из строки
+    start_datetime = None
+    if data.get('start_datetime_str'):
+        start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+    
+    if not start_datetime:
+        await message.answer("❌ Ошибка: дата не найдена. Попробуйте начать заново.")
+        await state.clear()
+        return
+    
+    # Создаём заявку
     new_order = Order(
         customer_id=data['customer_id'],
         city_id=data['city_id'],
@@ -270,7 +275,7 @@ async def order_address(message: Message, state: FSMContext, db: AsyncSession):
         contact_phone=data['contact_phone'],
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=start_datetime,
+        start_datetime=start_datetime,  # Используем восстановленный datetime
         estimated_hours=data['estimated_hours'],
         address=data['address'],
         username_for_contact=data['username_for_contact'],
