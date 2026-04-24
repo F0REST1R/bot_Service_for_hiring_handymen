@@ -8,6 +8,7 @@ from bot.database.database import init_db
 from bot.handlers import posts, registration, customer, worker, admin, post_creator
 from bot.database.database import get_db
 from bot.utils.scheduler import start_scheduler
+from bot.utils.google_sheets import GoogleSheetsClient
 
 logging.basicConfig(level=logging.INFO)
 
@@ -45,6 +46,22 @@ async def main():
     dp['bot'] = bot
     
     await start_scheduler(bot)
+
+        # Инициализация Google Sheets
+    google_client = None
+    if settings.GOOGLE_SPREADSHEET_ID:
+        try:
+            google_client = GoogleSheetsClient(
+                settings.GOOGLE_CREDENTIALS_FILE,
+                settings.GOOGLE_SPREADSHEET_ID
+            )
+            google_client.init_sheets()
+            logging.info("✅ Google Sheets интеграция активна")
+        except Exception as e:
+            logging.error(f"❌ Ошибка инициализации Google Sheets: {e}")
+    
+    # Передаем google_client в хендлеры через dp
+    dp['google_client'] = google_client
 
     # Регистрация роутеров
     dp.include_router(registration.router)

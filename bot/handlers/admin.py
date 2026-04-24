@@ -731,7 +731,7 @@ async def show_analytics(message: Message, db: AsyncSession):
         return
     
     # Ссылка на Google таблицу (потом замените на реальную)
-    google_sheets_url = "https://docs.google.com/spreadsheets/d/ВАША_ССЫЛКА/edit"
+    google_sheets_url = "https://docs.google.com/spreadsheets/d/157voo32aW7_DXac6R-R9mtAHDmO7SDJo9Tq9jOtp9JA/edit?gid=0#gid=0"
     
     await message.answer(
         "📊 <b>Аналитика</b>\n\n"
@@ -893,6 +893,12 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
         pass
     
     await callback.answer()
+
+    # Обновляем Google Sheets
+    google_client = callback.bot.get('google_client')
+    if google_client:
+        google_client.add_response(order_id, worker.full_name, worker.phone)
+
 @router.callback_query(lambda c: c.data.startswith("resend_post_"))
 async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
     await callback.answer()
@@ -1077,6 +1083,29 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     
     await state.clear()
     await callback.answer()
+
+    # Получаем google_client из контекста
+    google_client = callback.bot.get('google_client')
+    
+    # После успешной публикации:
+    if google_client:
+        order_data_for_sheet = {
+            'order_id': order.id,
+            'created_at': order.created_at.strftime('%d.%m.%Y %H:%M'),
+            'city': city.name,
+            'customer_name': order.full_name,
+            'customer_phone': order.contact_phone,
+            'workers_count': order.workers_count,
+            'start_datetime': format_datetime_moscow(order.start_datetime),
+            'estimated_hours': order.estimated_hours,
+            'address': order.address,
+            'work_description': order.work_description,
+            'price_per_person': order.price_per_person if order.price_per_person else 0,
+            'post_status': 'Опубликован',
+            'recruitment_status': 'Набор открыт',
+            'responses_count': 0
+        }
+        google_client.save_order(order_data_for_sheet)
 
 @router.callback_query(lambda c: c.data.startswith("publish_post_"))
 async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
