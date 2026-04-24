@@ -129,8 +129,6 @@ async def create_post_date(message: Message, state: FSMContext):
         start_datetime_str=start_datetime.isoformat(),  # Сохраняем как строку
         start_datetime_text=message.text
     )
-    # Также сохраняем объект в памяти (не в Redis)
-    await state.update_data(start_datetime=start_datetime)
     
     await message.answer(
         "📍 *Введите адрес проведения работ*\nПример: г. Мытищи, ул. Железнодорожная д.20",
