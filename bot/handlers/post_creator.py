@@ -99,7 +99,7 @@ async def create_post_workers_count(message: Message, state: FSMContext):
         return
     
     await message.answer(
-        "📅 *Введите дату и время начала работ*\n\n"
+        "📅 *Введите дату и время начала работ* (когда нужно приехать)\n\n"
         "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
         "Пример: 25.05.2026 10:15\n\n"
         "Важно: вводите МОСКОВСКОЕ время",
@@ -124,11 +124,36 @@ async def create_post_date(message: Message, state: FSMContext):
         await message.answer("❌ Дата и время не могут быть в прошлом! Укажите будущую дату.")
         return
     
-    # Сохраняем как строку для JSON сериализации
+    # Сохраняем дату начала как строку
     await state.update_data(
-        start_datetime_str=start_datetime.isoformat(),  # Сохраняем как строку
+        start_datetime_str=start_datetime.isoformat(),
         start_datetime_text=message.text
     )
+    
+    await message.answer(
+        "⏱️ *Введите ориентировочную продолжительность работы* (в часах)\n\n"
+        "Сколько примерно времени займёт работа?\n"
+        "Пример: 4, 6.5, 8",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="Markdown"
+    )
+    await state.set_state(PostStates.editing_duration)
+
+@router.message(PostStates.editing_duration)
+async def create_post_duration(message: Message, state: FSMContext):
+    if message.text == "❌ Отмена":
+        await cancel_create_post(message, state)
+        return
+    
+    try:
+        hours = float(message.text.replace(',', '.'))
+        if hours <= 0:
+            await message.answer("❌ Продолжительность должна быть больше 0!")
+            return
+        await state.update_data(estimated_hours=hours)
+    except ValueError:
+        await message.answer("❌ Введите число! Пример: 4, 6.5, 8")
+        return
     
     await message.answer(
         "📍 *Введите адрес проведения работ*\nПример: г. Мытищи, ул. Железнодорожная д.20",
@@ -178,8 +203,8 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
         contact_phone="",
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=start_datetime,  # Используем start_datetime, а не data['start_datetime']
-        estimated_hours=0,
+        start_datetime=start_datetime,
+        estimated_hours=data['estimated_hours'],
         address=data['address'],
         username_for_contact=None,
         status='active',
@@ -189,17 +214,18 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     await db.commit()
     await db.refresh(new_order)
     
-    # Используем start_datetime, а не data['start_datetime']
+    # Форматируем дату и время для отображения
     moscow_time = format_datetime_moscow(start_datetime)
     post_text = f"""
 🏗️ *ЗАЯВКА НА РАБОТУ*
 
 📅 *Дата:* {data['start_datetime_text']}
-🕐 *Время:* {moscow_time.split()[1] if ' ' in moscow_time else moscow_time}
 
 📍 *Адрес:* {data['address']}
 
 👥 *Требуется человек:* {data['workers_count']}
+
+⏱️ *Продолжительность:* {data['estimated_hours']} ч.
 
 📝 *Суть работы:*
 {data['work_description']}
@@ -254,7 +280,8 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
             f"📢 Канал: {data['channel_id']}\n"
             f"💰 {data['price_per_person']} руб./чел.\n"
             f"👥 {data['workers_count']} чел.\n"
-            f"🕐 {format_datetime_moscow(start_datetime)}\n"
+            f"📅 {data['start_datetime_text']}\n"
+            f"⏱️ {data['estimated_hours']} ч.\n"
             f"👥 Отправлено: {sent_to_workers} чел.",
             parse_mode="Markdown"
         )
@@ -275,4 +302,3 @@ async def cancel_create_post_callback(callback: CallbackQuery, state: FSMContext
     await state.clear()
     await callback.message.answer("❌ Создание поста отменено")
     await callback.answer()
-

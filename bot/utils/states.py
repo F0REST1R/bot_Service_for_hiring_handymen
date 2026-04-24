@@ -46,6 +46,7 @@ class PostStates(StatesGroup):
     editing_workers_count = State()
     editing_post = State()
     editing_date = State()
+    editing_duration = State()
     editing_address = State()
     editing_description = State()
     confirming_post = State()
