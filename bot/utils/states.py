@@ -29,14 +29,16 @@ class WorkerStates(StatesGroup):
     worker_id = State()
 
 class AdminStates(StatesGroup):
-    """Состояния администратора"""
     waiting_for_city_name = State()
     waiting_for_channel_id = State()
     waiting_for_notification_text = State()
     waiting_for_order_close = State()
     waiting_for_channel_id_edit = State()
-    waiting_for_post_city = State()
-    waiting_for_post_text = State()
+    waiting_for_edit_price = State()
+    waiting_for_edit_workers = State()
+    waiting_for_edit_date = State()
+    waiting_for_edit_address = State()
+    waiting_for_edit_desc = State()
 
 
 class PostStates(StatesGroup):
@@ -44,4 +46,9 @@ class PostStates(StatesGroup):
     choosing_city = State()
     entering_price = State() 
     editing_post = State()
+    confirming_post = State()
+    editing_workers_count = State()
+    editing_date = State()
+    editing_address = State()
+    editing_description = State()
     confirming_post = State()

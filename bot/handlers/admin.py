@@ -20,6 +20,24 @@ async def is_admin(telegram_id: int, db: AsyncSession) -> bool:
     user = result.scalar_one_or_none()
     return user is not None and user.role == 'admin'
 
+def parse_datetime(date_string: str):
+    """Парсинг даты и времени из формата ДД.ММ.ГГГГ ЧЧ:ММ"""
+    date_string = date_string.strip()
+    
+    # Формат: 20.05.2026 10:15
+    try:
+        return datetime.strptime(date_string, "%d.%m.%Y %H:%M")
+    except ValueError:
+        pass
+    
+    # Формат: 20.05.2026 10:15:00
+    try:
+        return datetime.strptime(date_string, "%d.%m.%Y %H:%M:%S")
+    except ValueError:
+        pass
+    
+    return None
+
 @router.message(F.text == "📋 Активные заявки")
 async def show_active_orders(message: Message, db: AsyncSession):
     if not await is_admin(message.from_user.id, db):
@@ -1090,3 +1108,238 @@ async def cancel_simple_post(message: Message, state: FSMContext):
     """Отмена создания поста (из сообщения)"""
     await state.clear()
     await message.answer("❌ Создание поста отменено")
+
+@router.callback_query(lambda c: c.data.startswith("edit_order_"))
+async def edit_order_start(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    """Начало редактирования заявки"""
+    order_id = int(callback.data.split("_")[2])
+    
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+    
+    await state.update_data(edit_order_id=order_id)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Изменить оплату", callback_data=f"edit_price_{order_id}")],
+        [InlineKeyboardButton(text="👥 Изменить количество", callback_data=f"edit_workers_{order_id}")],
+        [InlineKeyboardButton(text="📅 Изменить дату/время", callback_data=f"edit_date_{order_id}")],
+        [InlineKeyboardButton(text="📍 Изменить адрес", callback_data=f"edit_address_{order_id}")],
+        [InlineKeyboardButton(text="📝 Изменить описание", callback_data=f"edit_desc_{order_id}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
+    ])
+    
+    await callback.message.answer(
+        f"✏️ *Редактирование заявки #{order_id}*\n\n"
+        f"Что вы хотите изменить?",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("edit_price_"))
+async def edit_order_price(callback: CallbackQuery, state: FSMContext):
+    """Редактирование оплаты"""
+    order_id = int(callback.data.split("_")[2])
+    await state.update_data(edit_order_id=order_id)
+    await state.set_state(AdminStates.waiting_for_edit_price)
+    
+    await callback.message.answer(
+        "💰 *Введите новую оплату* (руб./чел.)\n"
+        "Пример: 3000",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("edit_workers_"))
+async def edit_order_workers(callback: CallbackQuery, state: FSMContext):
+    """Редактирование количества человек"""
+    order_id = int(callback.data.split("_")[2])
+    await state.update_data(edit_order_id=order_id)
+    await state.set_state(AdminStates.waiting_for_edit_workers)
+    
+    await callback.message.answer(
+        "👥 *Введите новое количество человек*\n"
+        "Пример: 10",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("edit_date_"))
+async def edit_order_date(callback: CallbackQuery, state: FSMContext):
+    """Редактирование даты и времени"""
+    order_id = int(callback.data.split("_")[2])
+    await state.update_data(edit_order_id=order_id)
+    await state.set_state(AdminStates.waiting_for_edit_date)
+    
+    await callback.message.answer(
+        "📅 *Введите новую дату и время*\n\n"
+        "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
+        "Пример: 25.05.2026 10:15\n\n"
+        "Важно: используйте МОСКОВСКОЕ время",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("edit_address_"))
+async def edit_order_address(callback: CallbackQuery, state: FSMContext):
+    """Редактирование адреса"""
+    order_id = int(callback.data.split("_")[2])
+    await state.update_data(edit_order_id=order_id)
+    await state.set_state(AdminStates.waiting_for_edit_address)
+    
+    await callback.message.answer(
+        "📍 *Введите новый адрес*\n\n"
+        "Пример: г. Мытищи, ул. Железнодорожная д.20",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("edit_desc_"))
+async def edit_order_desc(callback: CallbackQuery, state: FSMContext):
+    """Редактирование описания"""
+    order_id = int(callback.data.split("_")[2])
+    await state.update_data(edit_order_id=order_id)
+    await state.set_state(AdminStates.waiting_for_edit_desc)
+    
+    await callback.message.answer(
+        "📝 *Введите новое описание работ*",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="Markdown"
+    )
+    await callback.answer()
+
+@router.message(AdminStates.waiting_for_edit_price)
+async def save_edit_price(message: Message, state: FSMContext, db: AsyncSession):
+    """Сохранение новой оплаты"""
+    if message.text == "❌ Отмена":
+        await cancel_edit(message, state)
+        return
+    
+    try:
+        price = int(message.text)
+        if price <= 0:
+            await message.answer("❌ Стоимость должна быть больше 0!")
+            return
+        
+        data = await state.get_data()
+        order_id = data['edit_order_id']
+        
+        result = await db.execute(select(Order).where(Order.id == order_id))
+        order = result.scalar_one()
+        order.price_per_person = price
+        await db.commit()
+        
+        await message.answer(f"✅ Оплата изменена на {price} руб./чел.")
+    except ValueError:
+        await message.answer("❌ Введите число!")
+        return
+    
+    await state.clear()
+
+@router.message(AdminStates.waiting_for_edit_workers)
+async def save_edit_workers(message: Message, state: FSMContext, db: AsyncSession):
+    """Сохранение нового количества человек"""
+    if message.text == "❌ Отмена":
+        await cancel_edit(message, state)
+        return
+    
+    try:
+        workers = int(message.text)
+        if workers <= 0:
+            await message.answer("❌ Количество человек должно быть больше 0!")
+            return
+        
+        data = await state.get_data()
+        order_id = data['edit_order_id']
+        
+        result = await db.execute(select(Order).where(Order.id == order_id))
+        order = result.scalar_one()
+        order.workers_count = workers
+        await db.commit()
+        
+        await message.answer(f"✅ Количество человек изменено на {workers}")
+    except ValueError:
+        await message.answer("❌ Введите число!")
+        return
+    
+    await state.clear()
+
+@router.message(AdminStates.waiting_for_edit_date)
+async def save_edit_date(message: Message, state: FSMContext, db: AsyncSession):
+    """Сохранение новой даты"""
+    if message.text == "❌ Отмена":
+        await cancel_edit(message, state)
+        return
+    
+    start_datetime = parse_datetime(message.text)
+    
+    if not start_datetime:
+        await message.answer(
+            "❌ Неверный формат!\n\n"
+            "Используйте формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
+            "Пример: 25.05.2026 10:15"
+        )
+        return
+    
+    if start_datetime < datetime.now():
+        await message.answer("❌ Дата и время не могут быть в прошлом!")
+        return
+    
+    data = await state.get_data()
+    order_id = data['edit_order_id']
+    
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+    order.start_datetime = start_datetime
+    await db.commit()
+    
+    await message.answer(f"✅ Дата изменена на {start_datetime.strftime('%d.%m.%Y %H:%M')}")
+    await state.clear()
+
+@router.message(AdminStates.waiting_for_edit_address)
+async def save_edit_address(message: Message, state: FSMContext, db: AsyncSession):
+    """Сохранение нового адреса"""
+    if message.text == "❌ Отмена":
+        await cancel_edit(message, state)
+        return
+    
+    data = await state.get_data()
+    order_id = data['edit_order_id']
+    
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+    order.address = message.text
+    await db.commit()
+    
+    await message.answer(f"✅ Адрес изменён")
+    await state.clear()
+
+@router.message(AdminStates.waiting_for_edit_desc)
+async def save_edit_desc(message: Message, state: FSMContext, db: AsyncSession):
+    """Сохранение нового описания"""
+    if message.text == "❌ Отмена":
+        await cancel_edit(message, state)
+        return
+    
+    data = await state.get_data()
+    order_id = data['edit_order_id']
+    
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+    order.work_description = message.text
+    await db.commit()
+    
+    await message.answer(f"✅ Описание изменено")
+    await state.clear()
+
+async def cancel_edit(message: Message, state: FSMContext):
+    """Отмена редактирования"""
+    await state.clear()
+    await message.answer(
+        "❌ Редактирование отменено",
+        reply_markup=get_main_menu('admin')
+    )
