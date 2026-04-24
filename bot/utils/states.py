@@ -29,6 +29,7 @@ class WorkerStates(StatesGroup):
     worker_id = State()
 
 class AdminStates(StatesGroup):
+    """Состояния администратора"""
     waiting_for_city_name = State()
     waiting_for_channel_id = State()
     waiting_for_notification_text = State()
