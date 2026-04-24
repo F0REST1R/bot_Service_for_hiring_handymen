@@ -162,12 +162,15 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     data = await state.get_data()
     
     # Восстанавливаем datetime из строки
-    start_datetime = data.get('start_datetime')
-    if not start_datetime and data.get('start_datetime_str'):
-        from datetime import datetime
+    start_datetime = None
+    if data.get('start_datetime_str'):
         start_datetime = datetime.fromisoformat(data['start_datetime_str'])
     
-    # Создаём заявку с корректным временем
+    if not start_datetime:
+        await message.answer("❌ Ошибка: дата не найдена. Попробуйте начать заново.")
+        await state.clear()
+        return
+    
     new_order = Order(
         customer_id=None,
         city_id=data['city_id'],
@@ -175,7 +178,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
         contact_phone="",
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=start_datetime,  # Используем восстановленный объект
+        start_datetime=start_datetime,  # Используем start_datetime, а не data['start_datetime']
         estimated_hours=0,
         address=data['address'],
         username_for_contact=None,
@@ -186,7 +189,8 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     await db.commit()
     await db.refresh(new_order)
     
-    moscow_time = format_datetime_moscow(data['start_datetime'])
+    # Используем start_datetime, а не data['start_datetime']
+    moscow_time = format_datetime_moscow(start_datetime)
     post_text = f"""
 🏗️ *ЗАЯВКА НА РАБОТУ*
 
@@ -250,7 +254,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
             f"📢 Канал: {data['channel_id']}\n"
             f"💰 {data['price_per_person']} руб./чел.\n"
             f"👥 {data['workers_count']} чел.\n"
-            f"🕐 {format_datetime_moscow(data['start_datetime'])}\n"
+            f"🕐 {format_datetime_moscow(start_datetime)}\n"
             f"👥 Отправлено: {sent_to_workers} чел.",
             parse_mode="Markdown"
         )
@@ -271,3 +275,4 @@ async def cancel_create_post_callback(callback: CallbackQuery, state: FSMContext
     await state.clear()
     await callback.message.answer("❌ Создание поста отменено")
     await callback.answer()
+
