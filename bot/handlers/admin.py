@@ -46,8 +46,9 @@ async def show_active_orders(message: Message, db: AsyncSession):
         await message.answer("📭 Нет активных заявок на сегодня и завтра")
         return
     
-    text = f"📋 <b>Активные заявки</b>\n" \
-    f"<b>Для просмотра деталей отправьте:</b> `Заявка <ID>`\n\n"
+    text = "📋 *Активные заявки*\n"
+    text += "*Для просмотра деталей отправьте:* `Заявка <ID>`\n\n"
+    
     for order, city in orders:
         # Определяем статус набора
         if order.status == 'active':
@@ -63,15 +64,15 @@ async def show_active_orders(message: Message, db: AsyncSession):
         )
         assignments_count = len(assignments_result.scalars().all())
         
-        text += f"🏙️ Город: {city.name} ID:{order.id}\n"
+        text += f"🏙️ Город: {city.name} ID: `{order.id}`\n"
         text += f"🕐 Время: {order.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
         text += f"👥 Требуется: {order.workers_count} чел.\n"
         text += f"📌 Откликнулось: {assignments_count} чел.\n"
         text += f"{status_icon} {status_text}\n"
-        text += f"💬 <b>Для просмотра деталей отправьте:</b> `Заявка {order.id}`\n"
-        text += f"---\n\n"
-    
-    await message.answer(text, parse_mode="HTML")
+        text += f"💬 *Для просмотра деталей отправьте:* `Заявка {order.id}`\n"
+        text += "---\n\n"
+
+    await message.answer(text, parse_mode="Markdown")
 
 @router.message(F.text.regexp(r'^Заявка\s+(\d+)$', flags=re.IGNORECASE))
 async def show_order_details(message: Message, db: AsyncSession):
