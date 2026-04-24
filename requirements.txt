@@ -4,3 +4,4 @@ asyncpg==0.29.0
 pydantic-settings==2.1.0
 redis==5.0.1
 aiohttp-socks==0.8.4
+pytz==2024.1

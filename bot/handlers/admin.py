@@ -12,6 +12,8 @@ from bot.config import settings
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
 from bot.handlers.posts import format_post_text
 from bot.handlers.post_creator import cancel_create_post
+from datetime import timedelta
+import pytz
 import re
 
 router = Router()
@@ -28,21 +30,31 @@ async def show_active_orders(message: Message, db: AsyncSession):
         await message.answer("⛔ У вас нет доступа к этой функции")
         return
     
-    today = datetime.now().date()
-    tomorrow = today + timedelta(days=1)
+    # Получаем текущее московское время
+    moscow_tz = pytz.timezone('Europe/Moscow')
+    now_moscow = datetime.now(moscow_tz)
+    today_moscow = now_moscow.date()
+    tomorrow_moscow = today_moscow + timedelta(days=1)
     
-    # Заявки на сегодня и завтра
+    # Получаем все активные заявки
     result = await db.execute(
         select(Order, City)
         .join(City, Order.city_id == City.id)
-        .where(
-            Order.status == 'active',
-            Order.start_datetime >= today,
-            Order.start_datetime <= tomorrow + timedelta(days=1)
-        )
+        .where(Order.status == 'active')
         .order_by(Order.start_datetime)
     )
-    orders = result.all()
+    all_orders = result.all()
+    
+    # Фильтруем заявки по московскому времени
+    orders = []
+    for order, city in all_orders:
+        # Конвертируем UTC в московское время
+        order_moscow_time = order.start_datetime + timedelta(hours=3)
+        order_date = order_moscow_time.date()
+        
+        # Показываем только на сегодня и завтра
+        if order_date == today_moscow or order_date == tomorrow_moscow:
+            orders.append((order, city, order_moscow_time))
     
     if not orders:
         await message.answer("📭 Нет активных заявок на сегодня и завтра")
@@ -51,8 +63,7 @@ async def show_active_orders(message: Message, db: AsyncSession):
     text = "📋 *Активные заявки*\n"
     text += "*Для просмотра деталей отправьте:* `Заявка <ID>`\n\n"
     
-    for order, city in orders:
-        # Определяем статус набора
+    for order, city, moscow_time in orders:
         if order.status == 'active':
             status_icon = "❌"
             status_text = "Требуются рабочие"
@@ -60,20 +71,19 @@ async def show_active_orders(message: Message, db: AsyncSession):
             status_icon = "✅"
             status_text = "Набор закрыт"
         
-        # Количество откликнувшихся
         assignments_result = await db.execute(
             select(Assignment).where(Assignment.order_id == order.id)
         )
         assignments_count = len(assignments_result.scalars().all())
         
         text += f"🏙️ Город: {city.name} ID: `{order.id}`\n"
-        text += f"🕐 Время: {order.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+        text += f"🕐 Время: {moscow_time.strftime('%d.%m.%Y %H:%M')}\n"
         text += f"👥 Требуется: {order.workers_count} чел.\n"
         text += f"📌 Откликнулось: {assignments_count} чел.\n"
         text += f"{status_icon} {status_text}\n"
         text += f"💬 *Для просмотра деталей отправьте:* `Заявка {order.id}`\n"
         text += "---\n\n"
-
+    
     await message.answer(text, parse_mode="Markdown")
 
 @router.message(F.text.regexp(r'^Заявка\s+(\d+)$', flags=re.IGNORECASE))
@@ -130,7 +140,7 @@ async def show_order_details(message: Message, db: AsyncSession):
 📞 *Телефон:* {order.contact_phone}
 👥 *Количество человек:* {order.workers_count}
 📝 *Суть работы:* {order.work_description}
-🕐 *Дата и время:* {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
+🕐 *Дата и время:* {format_datetime_moscow(order.start_datetime)}
 ⏱️ *Время занятости:* {order.estimated_hours} ч.
 🏙️ *Город:* {city.name}
 📍 *Адрес:* {order.address}
