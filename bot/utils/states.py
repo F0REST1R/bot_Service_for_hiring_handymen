@@ -50,3 +50,4 @@ class PostStates(StatesGroup):
     editing_address = State()
     editing_description = State()
     confirming_post = State()
+    editing_field = State()
