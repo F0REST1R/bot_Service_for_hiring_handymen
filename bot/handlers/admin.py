@@ -31,46 +31,65 @@ async def show_active_orders(message: Message, db: AsyncSession):
         return
     
     from bot.utils.time_utils import format_datetime_moscow
+    from datetime import timedelta
+    import pytz
     
-    # Получаем ВСЕ заявки со статусом 'active' (независимо от набора)
+    # Получаем текущее московское время
+    moscow_tz = pytz.timezone('Europe/Moscow')
+    now_moscow = datetime.now(moscow_tz)
+    today_moscow = now_moscow.date()
+    tomorrow_moscow = today_moscow + timedelta(days=1)
+    
+    # Получаем ВСЕ активные заявки
     result = await db.execute(
         select(Order, City)
         .join(City, Order.city_id == City.id)
         .where(Order.status == 'active')
         .order_by(Order.start_datetime)
     )
-    orders = result.all()
+    all_orders = result.all()
     
-    if not orders:
-        await message.answer("📭 Нет активных заявок")
+    # Фильтруем заявки по московской дате (только сегодня и завтра)
+    filtered_orders = []
+    for order, city in all_orders:
+        # Конвертируем UTC в московское время
+        order_moscow_time = order.start_datetime + timedelta(hours=3)
+        order_date = order_moscow_time.date()
+        
+        if order_date == today_moscow or order_date == tomorrow_moscow:
+            filtered_orders.append((order, city, order_moscow_time))
+    
+    if not filtered_orders:
+        await message.answer("📭 Нет активных заявок на сегодня и завтра")
         return
     
-    text = "📋 *Активные заявки*\n"
+    text = "📋 *Активные заявки на сегодня и завтра*\n"
     text += "*Для просмотра деталей отправьте:* `Заявка <ID>`\n\n"
     
-    for order, city in orders:
-        # Определяем статус набора по количеству откликнувшихся
+    for order, city, moscow_time in filtered_orders:
+        # Получаем количество откликнувшихся
         assignments_result = await db.execute(
             select(Assignment).where(Assignment.order_id == order.id)
         )
         assignments = assignments_result.scalars().all()
         assignments_count = len(assignments)
         
-        # Если количество откликнувшихся равно требуемому - набор закрыт
+        # Определяем статус набора
         if assignments_count >= order.workers_count:
             status_icon = "✅"
             status_text = "Набор закрыт (все места заняты)"
         else:
             status_icon = "❌"
             status_text = "Требуются рабочие"
+            remaining = order.workers_count - assignments_count
+            status_text += f" (осталось {remaining} мест)"
         
         text += f"🏙️ Город: {city.name} ID: `{order.id}`\n"
-        text += f"🕐 Время: {format_datetime_moscow(order.start_datetime)}\n"
+        text += f"🕐 Время: {moscow_time.strftime('%d.%m.%Y %H:%M')}\n"
         text += f"👥 Требуется: {order.workers_count} чел.\n"
         text += f"📌 Откликнулось: {assignments_count} чел.\n"
         text += f"{status_icon} {status_text}\n"
-        text += f"💬 *Для просмотра деталей отправьте:* `Заявка {order.id}`\n"
-        text += "---\n\n"
+        text += f"---\n\n"
     
     await message.answer(text, parse_mode="Markdown")
 
