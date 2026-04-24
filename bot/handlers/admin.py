@@ -165,7 +165,7 @@ async def show_order_details(message: Message, db: AsyncSession):
     
     if not order.channel_post_id:
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"create_post_{order.id}")]
+            [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"post_create_{order.id}")]
         )
     else:
         keyboard.inline_keyboard.append(

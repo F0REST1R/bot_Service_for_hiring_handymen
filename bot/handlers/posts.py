@@ -48,7 +48,7 @@ def format_post_text(order, city, price_per_person):
 """
     return text
 
-@router.callback_query(lambda c: c.data.startswith("create_post_"))
+@router.callback_query(lambda c: c.data.startswith("post_create_"))
 async def create_post_start(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await callback.answer()
     """Начало создания поста для заявки"""
@@ -362,7 +362,7 @@ async def publish_post(callback: CallbackQuery, state: FSMContext, db: AsyncSess
         order.channel_post_id = sent_message.message_id
         order.posted_at = datetime.now()
         await db.commit()
-        
+
         try:
             await callback.message.delete()
         except:

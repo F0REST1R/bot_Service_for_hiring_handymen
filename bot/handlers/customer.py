@@ -269,7 +269,7 @@ async def order_address(message: Message, state: FSMContext, db: AsyncSession):
     
     # Кнопки для администратора
     admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"create_post_{new_order.id}")],
+        [InlineKeyboardButton(text="📢 Создать пост", callback_data=f"post_create_{new_order.id}")],
         [InlineKeyboardButton(text="🔒 Закрыть набор", callback_data=f"close_order_{new_order.id}")]
     ])
     
