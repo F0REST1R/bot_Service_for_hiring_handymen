@@ -124,7 +124,13 @@ async def create_post_date(message: Message, state: FSMContext):
         await message.answer("❌ Дата и время не могут быть в прошлом! Укажите будущую дату.")
         return
     
-    await state.update_data(start_datetime=start_datetime, start_datetime_text=message.text)
+    # Сохраняем как строку для JSON сериализации
+    await state.update_data(
+        start_datetime_str=start_datetime.isoformat(),  # Сохраняем как строку
+        start_datetime_text=message.text
+    )
+    # Также сохраняем объект в памяти (не в Redis)
+    await state.update_data(start_datetime=start_datetime)
     
     await message.answer(
         "📍 *Введите адрес проведения работ*\nПример: г. Мытищи, ул. Железнодорожная д.20",
@@ -157,6 +163,13 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     await state.update_data(work_description=message.text)
     data = await state.get_data()
     
+    # Восстанавливаем datetime из строки
+    start_datetime = data.get('start_datetime')
+    if not start_datetime and data.get('start_datetime_str'):
+        from datetime import datetime
+        start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+    
+    # Создаём заявку с корректным временем
     new_order = Order(
         customer_id=None,
         city_id=data['city_id'],
@@ -164,7 +177,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
         contact_phone="",
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=data['start_datetime'],
+        start_datetime=start_datetime,  # Используем восстановленный объект
         estimated_hours=0,
         address=data['address'],
         username_for_contact=None,
