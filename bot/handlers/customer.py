@@ -7,6 +7,7 @@ from datetime import datetime
 from bot.database.models import User, Customer, City, Order, Assignment, Worker
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
 from bot.utils.states import OrderStates
+from bot.utils.time_utils import parse_datetime_moscow
 from bot.config import settings
 import re
 
@@ -138,13 +139,40 @@ async def order_start_datetime(message: Message, state: FSMContext):
         await cancel_order(message, state)
         return
     
-    # Сохраняем дату как текст
-    await state.update_data(start_datetime_text=message.text)
+    # Парсим дату в формате ДД.ММ.ГГГГ ЧЧ:ММ
+    start_datetime = parse_datetime_moscow(message.text)
+    
+    if not start_datetime:
+        await message.answer(
+            "❌ Неверный формат даты!\n\n"
+            "Используйте формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
+            "Пример: 25.05.2026 10:15\n\n"
+            "Пожалуйста, введите заново:",
+            reply_markup=get_cancel_keyboard()
+        )
+        return
+    
+    # Проверяем, что дата не в прошлом
+    if start_datetime < datetime.now():
+        await message.answer(
+            "❌ Дата и время не могут быть в прошлом!\n"
+            "Пожалуйста, укажите будущую дату:",
+            reply_markup=get_cancel_keyboard()
+        )
+        return
+    
+    # Сохраняем как строку и как объект
+    await state.update_data(
+        start_datetime=start_datetime,
+        start_datetime_text=message.text
+    )
     
     await message.answer(
-        "⏱️ Введите ориентировочное время занятости (в часах):\n"
+        "⏱️ *Введите ориентировочное время занятости* (в часах)\n\n"
+        "Сколько примерно времени займёт работа?\n"
         "Пример: 4, 6.5, 8",
-        reply_markup=get_cancel_keyboard()
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="Markdown"
     )
     await state.set_state(OrderStates.estimated_hours)
 
@@ -230,8 +258,11 @@ async def order_address(message: Message, state: FSMContext, db: AsyncSession):
     await state.update_data(username_for_contact=username_for_contact)
     
     data = await state.get_data()
-    
-    # Создаём заявку
+
+    start_datetime = data.get('start_datetime')
+    if not start_datetime and data.get('start_datetime_text'):
+        start_datetime = parse_datetime_moscow(data['start_datetime_text'])
+
     new_order = Order(
         customer_id=data['customer_id'],
         city_id=data['city_id'],
@@ -239,7 +270,7 @@ async def order_address(message: Message, state: FSMContext, db: AsyncSession):
         contact_phone=data['contact_phone'],
         workers_count=data['workers_count'],
         work_description=data['work_description'],
-        start_datetime=datetime.now(),  # Временное значение
+        start_datetime=start_datetime,
         estimated_hours=data['estimated_hours'],
         address=data['address'],
         username_for_contact=data['username_for_contact'],
