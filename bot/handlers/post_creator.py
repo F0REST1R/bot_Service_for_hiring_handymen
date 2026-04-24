@@ -51,10 +51,10 @@ async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, 
         reply_markup=get_cancel_keyboard(),
         parse_mode="Markdown"
     )
-    await state.set_state(PostStates.editing_price)
+    await state.set_state(PostStates.entering_price)
     await callback.answer()
 
-@router.message(PostStates.editing_price)
+@router.message(PostStates.entering_price)
 async def create_post_price(message: Message, state: FSMContext):
     if message.text == "❌ Отмена":
         await cancel_create_post(message, state)
