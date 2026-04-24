@@ -30,54 +30,42 @@ async def show_active_orders(message: Message, db: AsyncSession):
         await message.answer("⛔ У вас нет доступа к этой функции")
         return
     
-    # Получаем текущее московское время
-    moscow_tz = pytz.timezone('Europe/Moscow')
-    now_moscow = datetime.now(moscow_tz)
-    today_moscow = now_moscow.date()
-    tomorrow_moscow = today_moscow + timedelta(days=1)
+    from bot.utils.time_utils import format_datetime_moscow
     
-    # Получаем все активные заявки
+    # Получаем ВСЕ заявки со статусом 'active' (независимо от набора)
     result = await db.execute(
         select(Order, City)
         .join(City, Order.city_id == City.id)
         .where(Order.status == 'active')
         .order_by(Order.start_datetime)
     )
-    all_orders = result.all()
-    
-    # Фильтруем заявки по московскому времени
-    orders = []
-    for order, city in all_orders:
-        # Конвертируем UTC в московское время
-        order_moscow_time = order.start_datetime + timedelta(hours=3)
-        order_date = order_moscow_time.date()
-        
-        # Показываем только на сегодня и завтра
-        if order_date == today_moscow or order_date == tomorrow_moscow:
-            orders.append((order, city, order_moscow_time))
+    orders = result.all()
     
     if not orders:
-        await message.answer("📭 Нет активных заявок на сегодня и завтра")
+        await message.answer("📭 Нет активных заявок")
         return
     
     text = "📋 *Активные заявки*\n"
     text += "*Для просмотра деталей отправьте:* `Заявка <ID>`\n\n"
     
-    for order, city, moscow_time in orders:
-        if order.status == 'active':
-            status_icon = "❌"
-            status_text = "Требуются рабочие"
-        else:
-            status_icon = "✅"
-            status_text = "Набор закрыт"
-        
+    for order, city in orders:
+        # Определяем статус набора по количеству откликнувшихся
         assignments_result = await db.execute(
             select(Assignment).where(Assignment.order_id == order.id)
         )
-        assignments_count = len(assignments_result.scalars().all())
+        assignments = assignments_result.scalars().all()
+        assignments_count = len(assignments)
+        
+        # Если количество откликнувшихся равно требуемому - набор закрыт
+        if assignments_count >= order.workers_count:
+            status_icon = "✅"
+            status_text = "Набор закрыт (все места заняты)"
+        else:
+            status_icon = "❌"
+            status_text = "Требуются рабочие"
         
         text += f"🏙️ Город: {city.name} ID: `{order.id}`\n"
-        text += f"🕐 Время: {moscow_time.strftime('%d.%m.%Y %H:%M')}\n"
+        text += f"🕐 Время: {format_datetime_moscow(order.start_datetime)}\n"
         text += f"👥 Требуется: {order.workers_count} чел.\n"
         text += f"📌 Откликнулось: {assignments_count} чел.\n"
         text += f"{status_icon} {status_text}\n"
@@ -117,20 +105,17 @@ async def show_order_details(message: Message, db: AsyncSession):
     
     # Получаем всех откликнувшихся рабочих
     assignments_result = await db.execute(
-        select(Assignment, Worker, User)
-        .join(Worker, Assignment.worker_id == Worker.id)
-        .join(User, Worker.user_id == User.id)
-        .where(Assignment.order_id == order_id)
+        select(Assignment).where(Assignment.order_id == order.id)
     )
-    assignments = assignments_result.all()
-    
-    # Определяем статус набора
-    if order.status == 'active':
+    assignments = assignments_result.scalars().all()
+    assignments_count = len(assignments)
+
+    if assignments_count >= order.workers_count:
+        status_icon = "✅"
+        status_text = "Набор закрыт (все места заняты)"
+    else:
         status_icon = "❌"
         status_text = "Набор открыт"
-    else:
-        status_icon = "✅"
-        status_text = "Набор закрыт"
     
     # Формируем текст заявки
     order_text = f"""
@@ -1011,7 +996,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     post_text = f"""
 🏗️ *ЗАЯВКА НА РАБОТУ*
 
-📅 *Дата:* {order.start_datetime.strftime('%d.%m.%Y %H:%M')}
+📅 *Дата:* {format_datetime_moscow(order.start_datetime)}
 
 📍 *Адрес:* {order.address}
 
