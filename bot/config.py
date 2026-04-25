@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str
     POSTGRES_DBNAME: str
     # Google Sheets
-    GOOGLE_CREDENTIALS_FILE: str = "credentials.json"
+    GOOGLE_CREDENTIALS_FILE: str = "the-right-person-494323-c44d1559661d.json"
     GOOGLE_SPREADSHEET_ID: str = ""
     REDIS_URL: str = ""
     ADMIN_IDS: Union[str, List[int]] = Field(default=[])
