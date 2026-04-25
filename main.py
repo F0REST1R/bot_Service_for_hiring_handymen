@@ -47,7 +47,7 @@ async def main():
     
     await start_scheduler(bot)
 
-        # Инициализация Google Sheets
+    # Инициализация Google Sheets
     google_client = None
     if settings.GOOGLE_SPREADSHEET_ID:
         try:
@@ -60,8 +60,8 @@ async def main():
         except Exception as e:
             logging.error(f"❌ Ошибка инициализации Google Sheets: {e}")
     
-    # Передаем google_client в хендлеры через dp
-    dp['google_client'] = google_client
+    # Передаем google_client в workspace (на уровень диспетчера)
+    dp['google_client'] = google_client  # Правильный способ
 
     # Регистрация роутеров
     dp.include_router(registration.router)

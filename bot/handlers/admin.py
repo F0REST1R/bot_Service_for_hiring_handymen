@@ -889,15 +889,16 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
             f"Осталось мест: {remaining_spots} из {order.workers_count}",
             parse_mode="Markdown"
         )
+
+        # Обновляем Google Sheets
+        google_client = callback.bot.get('google_client')
+        if google_client:
+            google_client.add_response(order_id, worker.full_name, worker.phone)
     except:
         pass
     
     await callback.answer()
 
-    # Обновляем Google Sheets
-    google_client = callback.bot.get('google_client')
-    if google_client:
-        google_client.add_response(order_id, worker.full_name, worker.phone)
 
 @router.callback_query(lambda c: c.data.startswith("resend_post_"))
 async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
@@ -1008,7 +1009,7 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
     await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("confirm_post_"))
-async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
+async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot, google_client=None):
     """Подтверждение и публикация поста"""
     order_id = int(callback.data.split("_")[2])
     data = await state.get_data()
@@ -1024,7 +1025,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     # Обновляем цену в заявке
     order.price_per_person = data.get('current_price', 0)
     
-    # Обновляем другие поля, если они изменились
+    # Обновляем другие поля
     order.workers_count = data['workers_count']
     order.address = data['address']
     order.work_description = data['work_description']
@@ -1032,7 +1033,8 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     order.start_datetime = datetime.fromisoformat(data['start_datetime_str'])
     await db.commit()
     
-    # Формируем итоговый пост
+    # Формируем пост
+    from bot.utils.time_utils import format_datetime_moscow
     post_text = f"""
 🏗️ *ЗАЯВКА НА РАБОТУ*
 
@@ -1069,6 +1071,27 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
         order.posted_at = datetime.now()
         await db.commit()
         
+        # Сохраняем в Google Sheets
+        if google_client:
+            from bot.utils.time_utils import format_datetime_moscow
+            order_data_for_sheet = {
+                'order_id': order.id,
+                'created_at': format_datetime_moscow(order.created_at),
+                'city': city.name,
+                'customer_name': order.full_name,
+                'customer_phone': order.contact_phone,
+                'workers_count': order.workers_count,
+                'start_datetime': format_datetime_moscow(order.start_datetime),
+                'estimated_hours': order.estimated_hours,
+                'address': order.address,
+                'work_description': order.work_description,
+                'price_per_person': order.price_per_person if order.price_per_person else 0,
+                'post_status': 'Опубликован',
+                'recruitment_status': 'Набор открыт',
+                'responses_count': 0
+            }
+            google_client.save_order(order_data_for_sheet)
+        
         await callback.message.answer(
             f"✅ *Пост успешно опубликован в канале {city.name}!*\n\n"
             f"ID сообщения: {sent_message.message_id}",
@@ -1083,29 +1106,6 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     
     await state.clear()
     await callback.answer()
-
-    # Получаем google_client из контекста
-    google_client = callback.bot.get('google_client')
-    
-    # После успешной публикации:
-    if google_client:
-        order_data_for_sheet = {
-            'order_id': order.id,
-            'created_at': order.created_at.strftime('%d.%m.%Y %H:%M'),
-            'city': city.name,
-            'customer_name': order.full_name,
-            'customer_phone': order.contact_phone,
-            'workers_count': order.workers_count,
-            'start_datetime': format_datetime_moscow(order.start_datetime),
-            'estimated_hours': order.estimated_hours,
-            'address': order.address,
-            'work_description': order.work_description,
-            'price_per_person': order.price_per_person if order.price_per_person else 0,
-            'post_status': 'Опубликован',
-            'recruitment_status': 'Набор открыт',
-            'responses_count': 0
-        }
-        google_client.save_order(order_data_for_sheet)
 
 @router.callback_query(lambda c: c.data.startswith("publish_post_"))
 async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
