@@ -5,7 +5,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from bot.config import settings
 from bot.database.database import init_db
-from bot.handlers import posts, registration, customer, worker, admin, post_creator
+from bot.handlers import registration, customer, worker, admin, post_creator
 from bot.database.database import get_db
 from bot.utils.scheduler import start_scheduler
 from bot.utils.google_sheets import GoogleSheetsClient
