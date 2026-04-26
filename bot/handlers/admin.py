@@ -11,7 +11,6 @@ from bot.utils.time_utils import format_datetime_moscow
 from bot.config import settings
 from bot.utils.time_utils import parse_datetime_moscow
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
-from bot.handlers.post_creator import cancel_create_post
 from datetime import timedelta
 import pytz
 import re
