@@ -17,28 +17,29 @@ import re
 
 router = Router()
 
-def format_post_text(order, city, price_per_person):
+def format_post_text(order, price_per_person):
     """Форматирование текста поста для канала и рассылки"""
-    # Получаем дату из заявки
-    if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
-        date_text = order.start_datetime_text
-        # Пытаемся извлечь дату и время отдельно
-        parts = date_text.split()
-        if len(parts) >= 2:
-            date_str = parts[0]
-            time_str = parts[1]
-        else:
-            date_str = date_text
-            time_str = "уточняется"
-    else:
-        date_str = order.start_datetime.strftime('%d.%m.%Y')
-        time_str = order.start_datetime.strftime('%H:%M')
+    # # Получаем дату из заявки
+    # if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
+    #     date_text = order.start_datetime_text
+    #     # Пытаемся извлечь дату и время отдельно
+    #     parts = date_text.split()
+    #     if len(parts) >= 2:
+    #         date_str = parts[0]
+    #         time_str = parts[1]
+    #     else:
+    #         date_str = date_text
+    #         time_str = "уточняется"
+    # else:
+    #     date_str = order.start_datetime.strftime('%d.%m.%Y')
+    #     time_str = order.start_datetime.strftime('%H:%M')
+    
+    moscow_time = format_datetime_moscow(order.start_datetime)
     
     text = f"""
 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 <b>Дата:</b> {date_str}
-🕐 <b>Время:</b> {time_str}
+📅 <b>Дата и время:</b> {moscow_time}
 
 📍 <b>Адрес:</b> {order.address}
 
@@ -1022,7 +1023,7 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
         channel_id=city.channel_id,
         workers_count=order.workers_count,
         start_datetime_str=order.start_datetime.isoformat(),
-        start_datetime_text=order.start_datetime.strftime('%d.%m.%Y %H:%M'),
+        start_datetime_text=format_datetime_moscow(order.start_datetime),
         estimated_hours=order.estimated_hours,
         address=order.address,
         work_description=order.work_description,
@@ -1233,7 +1234,7 @@ async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
     post_text = f"""
 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 <b>Дата и время:</b> {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
+📅 <b>Дата и время:</b> {format_datetime_moscow(order.start_datetime)}
 
 📍 <b>Адрес:</b> {order.address}
 
@@ -1764,7 +1765,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     post_text = f"""
 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 <b>Дата:</b> {data['start_datetime_text']}
+📅 <b>Дата и время:</b> {format_datetime_moscow(start_datetime)}
 
 📍 <b>Адрес:</b> {data['address']}
 
@@ -1828,7 +1829,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
             f"📅 {data['start_datetime_text']}\n"
             f"⏱️ {data['estimated_hours']} ч.\n"
             f"👥 Отправлено: {sent_to_workers} чел.",
-            parse_mode="HTML"
+            parse_mode="HTML", reply_markup=get_main_menu("admin")
         )
         
     except Exception as e:

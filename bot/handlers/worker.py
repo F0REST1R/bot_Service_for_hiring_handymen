@@ -7,7 +7,7 @@ from bot.database.models import Worker, City, worker_city, Order, Assignment, Us
 from bot.keyboards.reply import get_main_menu
 from bot.utils.states import WorkerStates
 from bot.config import settings
-
+from bot.utils.time_utils import format_datetime_moscow 
 router = Router()
 
 @router.message(F.text == "🏙️ Выбрать города")
@@ -144,7 +144,7 @@ async def show_my_responses(message: Message, db: AsyncSession):
     text = "📊 *Мои отклики*\n\n"
     for assignment, order, city in assignments:
         text += f"🏙️ *{city.name}*\n"
-        text += f"📅 Дата: {order.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+        text += f"📅 Дата: {format_datetime_moscow(order.start_datetime)}\n"
         text += f"📌 Отклик: {assignment.assigned_at.strftime('%d.%m.%Y %H:%M')}\n\n"
     
     await message.answer(text, parse_mode="Markdown")
