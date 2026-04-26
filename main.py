@@ -5,7 +5,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
 from bot.config import settings
 from bot.database.database import init_db
-from bot.handlers import registration, customer, worker, admin, post_creator
+from bot.handlers import registration, customer, worker, admin, cancel
 from bot.database.database import get_db
 from bot.utils.scheduler import start_scheduler
 from bot.utils.google_sheets import GoogleSheetsClient
@@ -71,7 +71,6 @@ async def main():
     dp.include_router(customer.router)
     dp.include_router(worker.router)
     dp.include_router(admin.router)
-    dp.include_router(post_creator.router)
     dp.include_router(cancel_router)
     
     logging.info("Bot started successfully!")
