@@ -40,13 +40,13 @@ async def create_order_start(message: Message, state: FSMContext, db: AsyncSessi
     )
     
     await message.answer(
-        f"📝 *Создание новой заявки*\n\n"
+        f"📝 <b>Создание новой заявки</b>\n\n"
         f"Ваши данные из регистрации:\n"
         f"📛 ФИО/Организация: {customer.full_name}\n"
         f"📞 Телефон: {customer.phone}\n\n"
         f"Использовать эти данные для заявки?",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(OrderStates.use_registration_data)
 
@@ -127,7 +127,7 @@ async def order_work_description(message: Message, state: FSMContext):
     
     await message.answer(
         "📅 Введите дату и время начала работ:\n\n"
-        "Пример: 25.05.2026, 10:00",
+        "Пример: 25.05.2026 10:00",
         reply_markup=get_cancel_keyboard()
     )
     await state.set_state(OrderStates.start_datetime)
@@ -167,11 +167,11 @@ async def order_start_datetime(message: Message, state: FSMContext):
     )
     
     await message.answer(
-        "⏱️ *Введите ориентировочное время занятости* (в часах)\n\n"
+        "⏱️ <b>Введите ориентировочное время занятости</b> (в часах)\n\n"
         "Сколько примерно времени займёт работа?\n"
         "Пример: 4, 6.5, 8",
         reply_markup=get_cancel_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(OrderStates.estimated_hours)
 
@@ -288,19 +288,19 @@ async def order_address(message: Message, state: FSMContext, db: AsyncSession):
     # Уведомляем администраторов
     admin_ids = settings.ADMIN_IDS
     order_text = f"""
-📢 *НОВАЯ ЗАЯВКА!* 🆔 #{new_order.id}
+📢 <b>НОВАЯ ЗАЯВКА!</b> 🆔 #{new_order.id}
 
-🏢 *Заказчик:* {data['full_name']}
-📞 *Телефон:* {data['contact_phone']}
-👥 *Количество человек:* {data['workers_count']}
-📝 *Суть работы:* {data['work_description']}
-🕐 *Дата и время:* {data['start_datetime_text']}
-⏱️ *Время занятости:* {data['estimated_hours']} ч.
-🏙️ *Город:* {data['city_name']}
-📍 *Адрес:* {data['address']}
-👤 *Username:* {username_text}
+🏢 <b>Заказчик:</b> {data['full_name']}
+📞 <b>Телефон:</b> {data['contact_phone']}
+👥 <b>Количество человек:</b> {data['workers_count']}
+📝 <b>Суть работы:</b> {data['work_description']}
+🕐 <b>Дата и время:</b> {data['start_datetime_text']}
+⏱️ <b>Время занятости:</b> {data['estimated_hours']} ч.
+🏙️ <b>Город:</b> {data['city_name']}
+📍 <b>Адрес:</b> {data['address']}
+👤 <b>Username:</b> {username_text}
 
-📅 *Создана:* {datetime.now().strftime('%d.%m.%Y %H:%M')}
+📅 <b>Создана:</b> {datetime.now().strftime('%d.%m.%Y %H:%M')}
 """
     
     # Кнопки для администратора
@@ -311,14 +311,14 @@ async def order_address(message: Message, state: FSMContext, db: AsyncSession):
     
     for admin_id in admin_ids:
         try:
-            await message.bot.send_message(admin_id, order_text, reply_markup=admin_keyboard, parse_mode="Markdown")
+            await message.bot.send_message(admin_id, order_text, reply_markup=admin_keyboard, parse_mode="HTML")
         except Exception as e:
             print(f"Не удалось отправить уведомление админу {admin_id}: {e}")
     
     await message.answer(
-        "✅ *Заявка успешно создана!*\n\n"
+        "✅ <b>Заявка успешно создана!</b>\n\n"
         "Администратор свяжется с вами в ближайшее время.",
-        parse_mode="Markdown",
+        parse_mode="HTML",
         reply_markup=get_main_menu('customer')
     )
     await state.clear()
@@ -356,7 +356,7 @@ async def show_my_orders(message: Message, db: AsyncSession):
         await message.answer("📭 У вас пока нет созданных заявок")
         return
     
-    text = "📋 *Мои заявки*\n\n"
+    text = "📋 <b>Мои заявки</b>\n\n"
     for order, city in orders:
         # Определяем статус
         if order.status == 'active':
@@ -369,7 +369,7 @@ async def show_my_orders(message: Message, db: AsyncSession):
         # Определяем, опубликован ли пост
         post_status = "✅ Опубликован" if order.channel_post_id else "❌ Не опубликован"
         
-        text += f"🆔 *Заявка #{order.id}*\n"
+        text += f"🆔 <b>Заявка #{order.id}</b>\n"
         text += f"🏙️ Город: {city.name}\n"
         text += f"📅 Дата: {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}\n"
         text += f"👥 Человек: {order.workers_count}\n"
@@ -385,4 +385,4 @@ async def show_my_orders(message: Message, db: AsyncSession):
         text += f"👥 Откликнулось: {assignments_count} чел.\n"
         text += f"---\n\n"
     
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")

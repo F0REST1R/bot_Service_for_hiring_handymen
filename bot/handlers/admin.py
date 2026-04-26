@@ -10,13 +10,49 @@ from bot.utils.states import AdminStates, PostStates
 from bot.utils.time_utils import format_datetime_moscow
 from bot.config import settings
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
-from bot.handlers.posts import format_post_text
 from bot.handlers.post_creator import cancel_create_post
 from datetime import timedelta
 import pytz
 import re
 
 router = Router()
+
+def format_post_text(order, city, price_per_person):
+    """Форматирование текста поста для канала и рассылки"""
+    # Получаем дату из заявки
+    if hasattr(order, 'start_datetime_text') and order.start_datetime_text:
+        date_text = order.start_datetime_text
+        # Пытаемся извлечь дату и время отдельно
+        parts = date_text.split()
+        if len(parts) >= 2:
+            date_str = parts[0]
+            time_str = parts[1]
+        else:
+            date_str = date_text
+            time_str = "уточняется"
+    else:
+        date_str = order.start_datetime.strftime('%d.%m.%Y')
+        time_str = order.start_datetime.strftime('%H:%M')
+    
+    text = f"""
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
+
+📅 <b>Дата:</b> {date_str}
+🕐 <b>Время:</b> {time_str}
+
+📍 <b>Адрес:</b> {order.address}
+
+👥 <b>Требуется человек:</b> {order.workers_count}
+
+📝 <b>Суть работы:</b>
+{order.work_description}
+
+💰 <b>Оплата:</b> {price_per_person} ₽
+
+---
+Нажмите кнопку "✅ Я поеду", чтобы откликнуться на заявку!
+"""
+    return text
 
 # Проверка прав администратора
 async def is_admin(telegram_id: int, db: AsyncSession) -> bool:
@@ -58,8 +94,8 @@ async def show_active_orders(message: Message, db: AsyncSession):
         await message.answer("📭 Нет активных заявок на сегодня и завтра")
         return
     
-    text = "📋 *Активные заявки на сегодня и завтра*\n"
-    text += "*Для просмотра деталей отправьте:* `Заявка <ID>`\n\n"
+    text = "📋 <b>Активные заявки на сегодня и завтра</b>\n"
+    text += "<b>Для просмотра деталей отправьте:</b> `Заявка <ID>`\n\n"
     
     for order, city, moscow_time in filtered_orders:
         # Получаем количество откликнувшихся
@@ -93,7 +129,7 @@ async def show_active_orders(message: Message, db: AsyncSession):
         text += f"{status_icon} {status_text}\n"
         text += f"---\n\n"
     
-    await message.answer(text, parse_mode="Markdown")
+    await message.answer(text, parse_mode="HTML")
 
 @router.message(F.text.regexp(r'^Заявка\s+(\d+)$', flags=re.IGNORECASE))
 async def show_order_details(message: Message, db: AsyncSession):
@@ -148,35 +184,35 @@ async def show_order_details(message: Message, db: AsyncSession):
     from bot.utils.time_utils import format_datetime_moscow
     
     order_text = f"""
-📋 *ДЕТАЛИ ЗАЯВКИ* 🆔 #{order.id}
+📋 <b>ДЕТАЛИ ЗАЯВКИ</b> 🆔 #{order.id}
 
-🏢 *Заказчик:* {order.full_name}
-📞 *Телефон:* {order.contact_phone}
-👥 *Количество человек:* {order.workers_count}
-📝 *Суть работы:* {order.work_description}
-🕐 *Дата и время:* {format_datetime_moscow(order.start_datetime)}
-⏱️ *Время занятости:* {order.estimated_hours} ч.
-🏙️ *Город:* {city.name}
-📍 *Адрес:* {order.address}
-👤 *Username:* @{order.username_for_contact if order.username_for_contact else 'не указан'}
-💰 *Оплата:* {order.price_per_person if order.price_per_person else 'не указана'} руб./чел.
+🏢 <b>Заказчик:</b> {order.full_name}
+📞 <b>Телефон:</b> {order.contact_phone}
+👥 <b>Количество человек:</b> {order.workers_count}
+📝 <b>Суть работы:</b> {order.work_description}
+🕐 <b>Дата и время:</b> {format_datetime_moscow(order.start_datetime)}
+⏱️ <b>Время занятости:</b> {order.estimated_hours} ч.
+🏙️ <b>Город:</b> {city.name}
+📍 <b>Адрес:</b> {order.address}
+👤 <b>Username:</b> @{order.username_for_contact if order.username_for_contact else 'не указан'}
+💰 <b>Оплата:</b> {order.price_per_person if order.price_per_person else 'не указана'} руб./чел.
 
-📊 *Статус:* {status_icon} {status_text}
-📢 *Пост:* {'✅ Опубликован' if order.channel_post_id else '❌ Не опубликован'}
-📅 *Создана:* {format_datetime_moscow(order.created_at)}
+📊 <b>Статус:</b> {status_icon} {status_text}
+📢 <b>Пост:</b> {'✅ Опубликован' if order.channel_post_id else '❌ Не опубликован'}
+📅 <b>Создана:</b> {format_datetime_moscow(order.created_at)}
 """
 
     # Добавляем информацию об откликнувшихся
     if assignments:
-        order_text += f"\n👥 *Откликнувшиеся исполнители:* ({assignments_count} чел.)\n\n"
+        order_text += f"\n👥 <b>Откликнувшиеся исполнители:</b> ({assignments_count} чел.)\n\n"
         for i, (assignment, worker, user) in enumerate(assignments, 1):
-            order_text += f"{i}. *{worker.full_name}*\n"
+            order_text += f"{i}. <b>{worker.full_name}</b>\n"
             order_text += f"   📞 Телефон: {worker.phone}\n"
             order_text += f"   📅 Возраст: {worker.age}\n"
             order_text += f"   🌍 Гражданство: {worker.citizenship}\n"
             order_text += f"   📌 Отклик: {format_datetime_moscow(assignment.assigned_at)}\n\n"
     else:
-        order_text += "\n📭 *Откликнувшиеся исполнители:* нет\n"
+        order_text += "\n📭 <b>Откликнувшиеся исполнители:</b> нет\n"
     
     # Кнопки для администратора
     keyboard = InlineKeyboardMarkup(inline_keyboard=[])
@@ -207,7 +243,7 @@ async def show_order_details(message: Message, db: AsyncSession):
             [InlineKeyboardButton(text="🔄 Повторно отправить", callback_data=f"resend_post_{order.id}")]
         )
     
-    await message.answer(order_text, reply_markup=keyboard, parse_mode="Markdown")
+    await message.answer(order_text, reply_markup=keyboard, parse_mode="HTML")
 
 @router.callback_query(lambda c: c.data.startswith("close_order_"))
 async def close_order(callback: CallbackQuery, db: AsyncSession):
@@ -285,7 +321,7 @@ async def show_order_assignments(message: Message, db: AsyncSession):
         await message.answer(f"📭 На заявку {order_id} никто не откликнулся")
         return
     
-    text = f"👥 <b>Откликнувшиеся на заявку {order_id}:<b>\n\n"
+    text = f"👥 <b>Откликнувшиеся на заявку {order_id}:</b>\n\n"
     for i, (assignment, worker, user) in enumerate(assignments, 1):
         text += f"{i}. <b>{worker.full_name}</b>\n"
         text += f"   📞 Телефон: {worker.phone}\n"
@@ -312,13 +348,13 @@ async def manage_cities(message: Message, db: AsyncSession):
         await message.answer("📭 Список городов пуст\n\n➕ Чтобы добавить город, нажмите кнопку ниже", reply_markup=keyboard)
         return
     
-    text = "🏙️ *Список городов*\n\n"
+    text = "🏙️ <b>Список городов</b>\n\n"
     keyboard = []
     
     for city in cities:
         status = "✅" if city.is_active else "❌"
         channel_info = f"{city.channel_id}" if city.channel_id else "Не привязан"
-        text += f"{status} *{city.name}*\n"
+        text += f"{status} <b>{city.name}</b>\n"
         text += f"   📢 Канал: {channel_info}\n\n"
         
         # Кнопки для каждого города
@@ -335,7 +371,7 @@ async def manage_cities(message: Message, db: AsyncSession):
     await message.answer(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 @router.callback_query(lambda c: c.data.startswith("city_"))
@@ -359,13 +395,13 @@ async def city_detail(callback: CallbackQuery, db: AsyncSession):
     ])
     
     await callback.message.edit_text(
-        f"🏙️ *{city.name}*\n\n"
+        f"🏙️ <b>{city.name}</b>\n\n"
         f"Статус: {'Активен ✅' if city.is_active else 'Скрыт ❌'}\n"
         f"{channel_text}\n"
         f"📅 Создан: {city.created_at.strftime('%d.%m.%Y')}\n\n"
         f"Выберите действие:",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -382,13 +418,13 @@ async def back_to_cities(callback: CallbackQuery, db: AsyncSession):
             [InlineKeyboardButton(text="➕ Добавить город", callback_data="add_city")]
         ])
     else:
-        text = "🏙️ *Список городов*\n\n"
+        text = "🏙️ <b>Список городов</b>\n\n"
         keyboard = []
         
         for city in cities:
             status = "✅" if city.is_active else "❌"
             channel_info = f"@{city.channel_id}" if city.channel_id else "Не привязан"
-            text += f"{status} *{city.name}*\n"
+            text += f"{status} <b>{city.name}</b>\n"
             text += f"   📢 Канал: {channel_info}\n\n"
             
             keyboard.append([
@@ -403,7 +439,7 @@ async def back_to_cities(callback: CallbackQuery, db: AsyncSession):
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -568,7 +604,7 @@ async def delete_city(callback: CallbackQuery, db: AsyncSession):
     await db.commit()
     
     await callback.answer(f"Город {city_name} удалён")
-    await callback.message.edit_text(f"✅ Город *{city_name}* успешно удалён!", parse_mode="Markdown")
+    await callback.message.edit_text(f"✅ Город <b>{city_name}</b> успешно удалён!", parse_mode="HTML")
     
     # Показываем обновлённый список городов
     await back_to_cities(callback, db)
@@ -586,10 +622,10 @@ async def send_notification_menu(message: Message, db: AsyncSession):
     ])
     
     await message.answer(
-        "📢 *Уведомления*\n\n"
+        "📢 <b>Уведомления</b>\n\n"
         "Выберите кому отправить сообщение:",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 @router.callback_query(lambda c: c.data.startswith("notify_"))
@@ -613,9 +649,9 @@ async def notification_type(callback: CallbackQuery, state: FSMContext, db: Asyn
         keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notification")])
         
         await callback.message.answer(
-            "🌍 *Выберите город* для рассылки уведомления:",
+            "🌍 <b>Выберите город</b> для рассылки уведомления:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         await callback.answer()
         return
@@ -650,11 +686,11 @@ async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSe
         pass
 
     await callback.message.answer(
-        f"✏️ Введите текст сообщения для рассылки пользователям из города *{city.name}*:",
+        f"✏️ Введите текст сообщения для рассылки пользователям из города <b>{city.name}</b>:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notification")]
         ]),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -690,7 +726,7 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
     
     users = result.scalars().all()
     
-    title = "📢 *Уведомление от администратора*"
+    title = "📢 <b>Уведомление от администратора</b>"
     
     sent = 0
     for user in users:
@@ -698,7 +734,7 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
             await bot.send_message(
                 user.telegram_id, 
                 f"{title}\n\n{text}", 
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             sent += 1
         except Exception as e:
@@ -852,7 +888,7 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
             
             await callback.bot.send_message(
                 admin_id,
-                f"✅ *НОВЫЙ ОТКЛИК!*\n\n"
+                f"✅ <b>НОВЫЙ ОТКЛИК!</b>\n\n"
                 f"👤 Исполнитель: {worker.full_name}\n"
                 f"📞 Телефон: {worker.phone}\n"
                 f"📅 Возраст: {worker.age}\n"
@@ -860,7 +896,7 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
                 f"🆔 Заявка #{order_id}\n"
                 f"🏙️ Город: {city.name}\n"
                 f"👥 Мест занято: {len(all_assignments)}/{order.workers_count}",
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception as e:
             print(f"Не удалось отправить уведомление админу {admin_id}: {e}")
@@ -884,10 +920,10 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
     try:
         await callback.bot.send_message(
             callback.from_user.id,
-            f"✅ *Вы откликнулись на заявку #{order_id}!*\n\n"
+            f"✅ <b>Вы откликнулись на заявку #{order_id}!</b>\n\n"
             f"Ожидайте звонка от администратора для подтверждения.\n"
             f"Осталось мест: {remaining_spots} из {order.workers_count}",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
 
         # Обновляем Google Sheets
@@ -947,9 +983,9 @@ async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSessi
         try:
             await bot.send_message(
                 chat_id=user.telegram_id,
-                text=f"🔔 *Новая заявка в вашем городе!*\n\n{post_text}",
+                text=f"🔔 <b>Новая заявка в вашем городе!</b>\n\n{post_text}",
                 reply_markup=keyboard,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
             sent += 1
         except Exception as e:
@@ -995,7 +1031,7 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
     
     # Запрашиваем цену
     await callback.message.answer(
-        f"💰 *Введите оплату для заявки #{order_id}* (руб./чел.)\n\n"
+        f"💰 <b>Введите оплату для заявки #{order_id}</b> (руб./чел.)\n\n"
         f"Пример: 2500\n\n"
         f"Город: {city.name}\n"
         f"Адрес: {order.address}\n"
@@ -1003,7 +1039,7 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
         ]),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.entering_price)
     await callback.answer()
@@ -1014,42 +1050,111 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     order_id = int(callback.data.split("_")[2])
     data = await state.get_data()
     
-    # Получаем заявку
+    # Если нет order_id в состоянии - восстанавливаем из callback
+    if not data.get('order_id'):
+        await state.update_data(order_id=order_id)
+        data = await state.get_data()
+    
+    # Если нет city_id - нужно выбрать город заново
+    if not data.get('city_id'):
+        await callback.message.answer(
+            "⚠️ Данные о городе были утеряны.\n\n"
+            "Пожалуйста, выберите город для публикации:"
+        )
+        
+        result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
+        cities = result.scalars().all()
+        
+        if not cities:
+            await callback.message.answer("❌ Нет доступных городов с привязанными каналами!")
+            await callback.answer()
+            return
+        
+        keyboard = []
+        for city in cities:
+            keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
+        keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
+        
+        await callback.message.answer(
+            "📝 <b>Выберите город для публикации</b>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+            parse_mode="HTML"
+        )
+        await state.set_state(PostStates.choosing_city)
+        await callback.answer()
+        return
+    
+    # Получаем заявку из БД
     result = await db.execute(select(Order).where(Order.id == order_id))
     order = result.scalar_one()
     
-    # Получаем город
-    result = await db.execute(select(City).where(City.id == data['city_id']))
+    # Получаем город (сначала из состояния, если нет - из заявки)
+    city_id = data.get('city_id')
+    if not city_id:
+        city_id = order.city_id
+    
+    result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
     
-    # Обновляем цену в заявке
-    order.price_per_person = data.get('current_price', 0)
+    if not city.channel_id:
+        await callback.message.answer(f"❌ К городу {city.name} не привязан канал!")
+        await callback.answer()
+        return
     
-    # Обновляем другие поля
-    order.workers_count = data['workers_count']
-    order.address = data['address']
-    order.work_description = data['work_description']
-    order.estimated_hours = data['estimated_hours']
-    order.start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+    # Если нет цены в состоянии - запрашиваем
+    current_price = data.get('current_price')
+    if not current_price and order.price_per_person:
+        current_price = order.price_per_person
+    elif not current_price:
+        await callback.message.answer(
+            f"💰 <b>Введите оплату для заявки #{order_id}</b> (руб./чел.)\n\n"
+            f"Пример: 2500\n\n"
+            f"Город: {city.name}\n"
+            f"Адрес: {order.address}\n"
+            f"Требуется: {order.workers_count} чел.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
+            ]),
+            parse_mode="HTML"
+        )
+        await state.set_state(PostStates.entering_price)
+        await callback.answer()
+        return
+    
+    # Обновляем цену в заявке
+    order.price_per_person = current_price
+    
+    # Обновляем другие поля, если они есть в состоянии
+    if data.get('workers_count'):
+        order.workers_count = data['workers_count']
+    if data.get('address'):
+        order.address = data['address']
+    if data.get('work_description'):
+        order.work_description = data['work_description']
+    if data.get('estimated_hours'):
+        order.estimated_hours = data['estimated_hours']
+    if data.get('start_datetime_str'):
+        order.start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+    
     await db.commit()
     
     # Формируем пост
     from bot.utils.time_utils import format_datetime_moscow
     post_text = f"""
-🏗️ *ЗАЯВКА НА РАБОТУ*
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 *Дата:* {format_datetime_moscow(order.start_datetime)}
+📅 <b>Дата и время:</b> {format_datetime_moscow(order.start_datetime)}
 
-📍 *Адрес:* {order.address}
+📍 <b>Адрес:</b> {order.address}
 
-👥 *Требуется человек:* {order.workers_count}
+👥 <b>Требуется человек:</b> {order.workers_count}
 
-⏱️ *Продолжительность:* {order.estimated_hours} ч.
+⏱️ <b>Продолжительность:</b> {order.estimated_hours} ч.
 
-📝 *Суть работы:*
+📝 <b>Суть работы:</b>
 {order.work_description}
 
-💰 *Оплата:* {order.price_per_person} ₽
+💰 <b>Оплата:</b> {order.price_per_person} ₽
 
 ---
 Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
@@ -1064,7 +1169,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
             chat_id=city.channel_id,
             text=post_text,
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
         order.channel_post_id = sent_message.message_id
@@ -1073,7 +1178,6 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
         
         # Сохраняем в Google Sheets
         if google_client:
-            from bot.utils.time_utils import format_datetime_moscow
             order_data_for_sheet = {
                 'order_id': order.id,
                 'created_at': format_datetime_moscow(order.created_at),
@@ -1093,9 +1197,9 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
             google_client.save_order(order_data_for_sheet)
         
         await callback.message.answer(
-            f"✅ *Пост успешно опубликован в канале {city.name}!*\n\n"
+            f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>\n\n"
             f"ID сообщения: {sent_message.message_id}",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
         # Обновляем детали заявки
@@ -1127,20 +1231,20 @@ async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
         return
     
     post_text = f"""
-🏗️ *ЗАЯВКА НА РАБОТУ*
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 *Дата:* {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
+📅 <b>Дата и время:</b> {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}
 
-📍 *Адрес:* {order.address}
+📍 <b>Адрес:</b> {order.address}
 
-👥 *Требуется человек:* {order.workers_count}
+👥 <b>Требуется человек:</b> {order.workers_count}
 
-⏱️ *Продолжительность:* {order.estimated_hours} ч.
+⏱️ <b>Продолжительность:</b> {order.estimated_hours} ч.
 
-📝 *Суть работы:*
+📝 <b>Суть работы:</b>
 {order.work_description}
 
-💰 *Оплата:* {order.price_per_person if order.price_per_person else 'не указана'} ₽
+💰 <b>Оплата:</b> {order.price_per_person if order.price_per_person else 'не указана'} ₽
 
 ---
 Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
@@ -1155,14 +1259,14 @@ async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
             chat_id=city.channel_id,
             text=post_text,
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
         order.channel_post_id = sent_message.message_id
         order.posted_at = datetime.now()
         await db.commit()
         
-        await callback.message.answer(f"✅ *Пост успешно опубликован в канале {city.name}!*", parse_mode="Markdown")
+        await callback.message.answer(f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>", parse_mode="HTML")
         
         # Обновляем детали заявки
         await show_order_details(callback.message, db)
@@ -1173,7 +1277,7 @@ async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
     await callback.answer()
 
 @router.message(PostStates.entering_price)
-async def process_post_price(message: Message, state: FSMContext):
+async def process_post_price(message: Message, state: FSMContext, db: AsyncSession):
     """Ввод цены для поста"""
     if message.text == "❌ Отмена":
         await cancel_create_post(message, state)
@@ -1184,33 +1288,90 @@ async def process_post_price(message: Message, state: FSMContext):
         if price <= 0:
             await message.answer("❌ Стоимость должна быть больше 0!")
             return
-        await state.update_data(current_price=price)
     except ValueError:
         await message.answer("❌ Введите число! Пример: 2500")
         return
     
+    # Получаем существующие данные из состояния
     data = await state.get_data()
+    
+    # Если нет order_id - показываем ошибку и запрашиваем город
+    if not data or not data.get('order_id'):
+        await message.answer(
+            "⚠️ Данные о заявке были утеряны.\n\n"
+            "Пожалуйста, выберите город для публикации:"
+        )
+        await state.clear()
+        # Показываем список городов для выбора
+        result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
+        cities = result.scalars().all()
+        
+        if not cities:
+            await message.answer("❌ Нет доступных городов с привязанными каналами!")
+            return
+        
+        keyboard = []
+        for city in cities:
+            keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
+        keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
+        
+        await message.answer(
+            "📝 <b>Выберите город для публикации</b>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+            parse_mode="HTML"
+        )
+        await state.set_state(PostStates.choosing_city)
+        return
+    
+    # Если нет city_id - запрашиваем город заново
+    if not data.get('city_id'):
+        await message.answer(
+            "⚠️ Данные о городе были утеряны.\n\n"
+            "Пожалуйста, выберите город заново:"
+        )
+        result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
+        cities = result.scalars().all()
+        
+        if not cities:
+            await message.answer("❌ Нет доступных городов с привязанными каналами!")
+            return
+        
+        keyboard = []
+        for city in cities:
+            keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
+        keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
+        
+        await message.answer(
+            "📝 <b>Выберите город для публикации</b>",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+            parse_mode="HTML"
+        )
+        await state.set_state(PostStates.choosing_city)
+        return
+    
+    # Данные есть - сохраняем цену
+    await state.update_data(current_price=price)
     
     # Восстанавливаем datetime из строки
     from datetime import datetime
     start_datetime = datetime.fromisoformat(data['start_datetime_str'])
     
-    # Показываем предпросмотр поста с ценой
+    # Показываем предпросмотр
     post_text = f"""
-🏗️ *ЗАЯВКА НА РАБОТУ*
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 *Дата:* {start_datetime.strftime('%d.%m.%Y %H:%M')}
+📅 <b>Дата и время:</b> {start_datetime.strftime('%d.%m.%Y %H:%M')}
 
-📍 *Адрес:* {data['address']}
+📍 <b>Адрес:</b> {data['address']}
 
-👥 *Требуется человек:* {data['workers_count']}
+👥 <b>Требуется человек:</b> {data['workers_count']}
 
-⏱️ *Продолжительность:* {data['estimated_hours']} ч.
+⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
 
-📝 *Суть работы:*
+📝 <b>Суть работы:</b>
 {data['work_description']}
 
-💰 *Оплата:* {price} ₽
+💰 <b>Оплата:</b> {price} ₽
 
 ---
 Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
@@ -1224,9 +1385,9 @@ async def process_post_price(message: Message, state: FSMContext):
     ])
     
     await message.answer(
-        f"📝 *Предпросмотр поста для канала {data['city_name']}:*\n\n{post_text}",
+        f"📝 <b>Предпросмотр поста для канала {data['city_name']}:</b>\n\n{post_text}",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.confirming_post)
 
@@ -1243,9 +1404,9 @@ async def edit_post_data(callback: CallbackQuery, state: FSMContext):
     ])
     
     await callback.message.answer(
-        "✏️ *Что вы хотите отредактировать?*",
+        "✏️ <b>Что вы хотите отредактировать?</b>",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await callback.answer()
 
@@ -1256,11 +1417,11 @@ async def edit_field(callback: CallbackQuery, state: FSMContext):
     await state.update_data(edit_field=field)
     
     prompts = {
-        "address": "📍 *Введите новый адрес:*\nПример: г. Мытищи, ул. Железнодорожная д.20",
-        "workers": "👥 *Введите новое количество человек:*\nПример: 5",
-        "description": "📝 *Введите новое описание работ:*",
-        "hours": "⏱️ *Введите новую продолжительность (в часах):*\nПример: 4, 6.5, 8",
-        "date": "📅 *Введите новую дату и время:*\nФормат: ДД.ММ.ГГГГ ЧЧ:ММ\nПример: 25.05.2026 10:15"
+        "address": "📍 <b>Введите новый адрес:</b>\nПример: г. Мытищи, ул. Железнодорожная д.20",
+        "workers": "👥 <b>Введите новое количество человек:</b>\nПример: 5",
+        "description": "📝 <b>Введите новое описание работ:</b>",
+        "hours": "⏱️ <b>Введите новую продолжительность (в часах):</b>\nПример: 4, 6.5, 8",
+        "date": "📅 <b>Введите новую дату и время:</b>\nФормат: ДД.ММ.ГГГГ ЧЧ:ММ\nПример: 25.05.2026 10:15"
     }
     
     await callback.message.answer(
@@ -1268,7 +1429,7 @@ async def edit_field(callback: CallbackQuery, state: FSMContext):
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
         ]),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.editing_field)
     await callback.answer()
@@ -1324,20 +1485,20 @@ async def save_edited_field(message: Message, state: FSMContext, db: AsyncSessio
     price = data.get('current_price', 0)
     
     post_text = f"""
-🏗️ *ЗАЯВКА НА РАБОТУ*
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 *Дата:* {start_datetime.strftime('%d.%m.%Y %H:%M')}
+📅 <b>Дата и время:</b> {start_datetime.strftime('%d.%m.%Y %H:%M')}
 
-📍 *Адрес:* {data['address']}
+📍 <b>Адрес:</b> {data['address']}
 
-👥 *Требуется человек:* {data['workers_count']}
+👥 <b>Требуется человек:</b> {data['workers_count']}
 
-⏱️ *Продолжительность:* {data['estimated_hours']} ч.
+⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
 
-📝 *Суть работы:*
+📝 <b>Суть работы:</b>
 {data['work_description']}
 
-💰 *Оплата:* {price} ₽
+💰 <b>Оплата:</b> {price} ₽
 
 ---
 Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
@@ -1351,9 +1512,9 @@ async def save_edited_field(message: Message, state: FSMContext, db: AsyncSessio
     ])
     
     await message.answer(
-        f"📝 *Обновленный предпросмотр:*\n\n{post_text}",
+        f"📝 <b>Обновленный предпросмотр:</b>\n\n{post_text}",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.confirming_post)
     await state.update_data(edit_field=None)
@@ -1362,11 +1523,11 @@ async def save_edited_field(message: Message, state: FSMContext, db: AsyncSessio
 async def edit_post_price(callback: CallbackQuery, state: FSMContext):
     """Редактирование цены"""
     await callback.message.answer(
-        "💰 *Введите новую оплату* (руб./чел.)\nПример: 3000",
+        "💰 <b>Введите новую оплату</b> (руб./чел.)\nПример: 3000",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
         ]),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.entering_price)
     await callback.answer()

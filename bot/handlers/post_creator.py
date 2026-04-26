@@ -37,9 +37,9 @@ async def create_post_start(message: Message, state: FSMContext, db: AsyncSessio
     keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
     
     await message.answer(
-        "📝 *Создание новой заявки*\n\nВыберите город:",
+        "📝 <b>Создание новой заявки</b>\n\nВыберите город:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.choosing_city)
 
@@ -52,9 +52,9 @@ async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, 
     await state.update_data(city_id=city_id, city_name=city.name, channel_id=city.channel_id)
     
     await callback.message.answer(
-        "💰 *Введите оплату* (руб./чел.)\nПример: 2500",
+        "💰 <b>Введите оплату</b> (руб./чел.)\nПример: 2500",
         reply_markup=get_cancel_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.entering_price)
     await callback.answer()
@@ -76,9 +76,9 @@ async def create_post_price(message: Message, state: FSMContext):
         return
     
     await message.answer(
-        "👥 *Введите количество требуемых человек*\nПример: 5",
+        "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
         reply_markup=get_cancel_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.editing_workers_count)
 
@@ -99,12 +99,12 @@ async def create_post_workers_count(message: Message, state: FSMContext):
         return
     
     await message.answer(
-        "📅 *Введите дату и время начала работ* (когда нужно приехать)\n\n"
+        "📅 <b>Введите дату и время начала работ</b> (когда нужно приехать)\n\n"
         "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
         "Пример: 25.05.2026 10:15\n\n"
         "Важно: вводите МОСКОВСКОЕ время",
         reply_markup=get_cancel_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.editing_date)
 
@@ -131,11 +131,11 @@ async def create_post_date(message: Message, state: FSMContext):
     )
     
     await message.answer(
-        "⏱️ *Введите ориентировочную продолжительность работы* (в часах)\n\n"
+        "⏱️ <b>Введите ориентировочную продолжительность работы</b> (в часах)\n\n"
         "Сколько примерно времени займёт работа?\n"
         "Пример: 4, 6.5, 8",
         reply_markup=get_cancel_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.editing_duration)
 
@@ -156,9 +156,9 @@ async def create_post_duration(message: Message, state: FSMContext):
         return
     
     await message.answer(
-        "📍 *Введите адрес проведения работ*\nПример: г. Мытищи, ул. Железнодорожная д.20",
+        "📍 <b>Введите адрес проведения работ</b>\nПример: г. Мытищи, ул. Железнодорожная д.20",
         reply_markup=get_cancel_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.editing_address)
 
@@ -171,9 +171,9 @@ async def create_post_address(message: Message, state: FSMContext):
     await state.update_data(address=message.text)
     
     await message.answer(
-        "📝 *Введите описание работ*\nПодробно опишите, что нужно делать:",
+        "📝 <b>Введите описание работ</b>\nПодробно опишите, что нужно делать:",
         reply_markup=get_cancel_keyboard(),
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
     await state.set_state(PostStates.editing_description)
 
@@ -217,20 +217,20 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     # Форматируем дату и время для отображения
     moscow_time = format_datetime_moscow(start_datetime)
     post_text = f"""
-🏗️ *ЗАЯВКА НА РАБОТУ*
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 *Дата:* {data['start_datetime_text']}
+📅 <b>Дата:</b> {data['start_datetime_text']}
 
-📍 *Адрес:* {data['address']}
+📍 <b>Адрес:</b> {data['address']}
 
-👥 *Требуется человек:* {data['workers_count']}
+👥 <b>Требуется человек:</b> {data['workers_count']}
 
-⏱️ *Продолжительность:* {data['estimated_hours']} ч.
+⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
 
-📝 *Суть работы:*
+📝 <b>Суть работы:</b>
 {data['work_description']}
 
-💰 *Оплата:* {data['price_per_person']} ₽
+💰 <b>Оплата:</b> {data['price_per_person']} ₽
 
 ---
 Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
@@ -245,7 +245,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
             chat_id=data['channel_id'],
             text=post_text,
             reply_markup=keyboard,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
         result = await db.execute(
@@ -262,9 +262,9 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
             try:
                 await bot.send_message(
                     chat_id=user.telegram_id,
-                    text=f"🔔 *Новая заявка в городе {data['city_name']}!*\n\n{post_text}",
+                    text=f"🔔 <b>Новая заявка в городе {data['city_name']}!</b>\n\n{post_text}",
                     reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    parse_mode="HTML"
                 )
                 sent_to_workers += 1
             except Exception as e:
@@ -275,7 +275,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
         await db.commit()
         
         await message.answer(
-            f"✅ *Пост опубликован!*\n\n"
+            f"✅ <b>Пост опубликован!</b>\n\n"
             f"🏙️ Город: {data['city_name']}\n"
             f"📢 Канал: {data['channel_id']}\n"
             f"💰 {data['price_per_person']} руб./чел.\n"
@@ -283,7 +283,7 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
             f"📅 {data['start_datetime_text']}\n"
             f"⏱️ {data['estimated_hours']} ч.\n"
             f"👥 Отправлено: {sent_to_workers} чел.",
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
         
     except Exception as e:
