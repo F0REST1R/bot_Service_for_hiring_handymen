@@ -1276,120 +1276,120 @@ async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
     
     await callback.answer()
 
-@router.message(PostStates.entering_price)
-async def process_post_price(message: Message, state: FSMContext, db: AsyncSession):
-    """Ввод цены для поста"""
-    if message.text == "❌ Отмена":
-        await cancel_create_post(message, state)
-        return
+# @router.message(PostStates.entering_price)
+# async def process_post_price(message: Message, state: FSMContext, db: AsyncSession):
+#     """Ввод цены для поста"""
+#     if message.text == "❌ Отмена":
+#         await cancel_create_post(message, state)
+#         return
     
-    try:
-        price = int(message.text)
-        if price <= 0:
-            await message.answer("❌ Стоимость должна быть больше 0!")
-            return
-    except ValueError:
-        await message.answer("❌ Введите число! Пример: 2500")
-        return
+#     try:
+#         price = int(message.text)
+#         if price <= 0:
+#             await message.answer("❌ Стоимость должна быть больше 0!")
+#             return
+#     except ValueError:
+#         await message.answer("❌ Введите число! Пример: 2500")
+#         return
     
-    # Получаем существующие данные из состояния
-    data = await state.get_data()
+#     # Получаем существующие данные из состояния
+#     data = await state.get_data()
     
-    # Если нет order_id - показываем ошибку и запрашиваем город
-    if not data or not data.get('order_id'):
-        await message.answer(
-            "⚠️ Данные о заявке были утеряны.\n\n"
-            "Пожалуйста, выберите город для публикации:"
-        )
-        await state.clear()
-        # Показываем список городов для выбора
-        result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
-        cities = result.scalars().all()
+#     # Если нет order_id - показываем ошибку и запрашиваем город
+#     if not data or not data.get('order_id'):
+#         await message.answer(
+#             "⚠️ Данные о заявке были утеряны.\n\n"
+#             "Пожалуйста, выберите город для публикации:"
+#         )
+#         await state.clear()
+#         # Показываем список городов для выбора
+#         result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
+#         cities = result.scalars().all()
         
-        if not cities:
-            await message.answer("❌ Нет доступных городов с привязанными каналами!")
-            return
+#         if not cities:
+#             await message.answer("❌ Нет доступных городов с привязанными каналами!")
+#             return
         
-        keyboard = []
-        for city in cities:
-            keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
-        keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
+#         keyboard = []
+#         for city in cities:
+#             keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
+#         keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
         
-        await message.answer(
-            "📝 <b>Выберите город для публикации</b>",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-            parse_mode="HTML"
-        )
-        await state.set_state(PostStates.choosing_city)
-        return
+#         await message.answer(
+#             "📝 <b>Выберите город для публикации</b>",
+#             reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+#             parse_mode="HTML"
+#         )
+#         await state.set_state(PostStates.choosing_city)
+#         return
     
-    # Если нет city_id - запрашиваем город заново
-    if not data.get('city_id'):
-        await message.answer(
-            "⚠️ Данные о городе были утеряны.\n\n"
-            "Пожалуйста, выберите город заново:"
-        )
-        result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
-        cities = result.scalars().all()
+#     # Если нет city_id - запрашиваем город заново
+#     if not data.get('city_id'):
+#         await message.answer(
+#             "⚠️ Данные о городе были утеряны.\n\n"
+#             "Пожалуйста, выберите город заново:"
+#         )
+#         result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
+#         cities = result.scalars().all()
         
-        if not cities:
-            await message.answer("❌ Нет доступных городов с привязанными каналами!")
-            return
+#         if not cities:
+#             await message.answer("❌ Нет доступных городов с привязанными каналами!")
+#             return
         
-        keyboard = []
-        for city in cities:
-            keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
-        keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
+#         keyboard = []
+#         for city in cities:
+#             keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
+#         keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
         
-        await message.answer(
-            "📝 <b>Выберите город для публикации</b>",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-            parse_mode="HTML"
-        )
-        await state.set_state(PostStates.choosing_city)
-        return
+#         await message.answer(
+#             "📝 <b>Выберите город для публикации</b>",
+#             reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
+#             parse_mode="HTML"
+#         )
+#         await state.set_state(PostStates.choosing_city)
+#         return
     
-    # Данные есть - сохраняем цену
-    await state.update_data(current_price=price)
+#     # Данные есть - сохраняем цену
+#     await state.update_data(current_price=price)
     
-    # Восстанавливаем datetime из строки
-    from datetime import datetime
-    start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+#     # Восстанавливаем datetime из строки
+#     from datetime import datetime
+#     start_datetime = datetime.fromisoformat(data['start_datetime_str'])
     
-    # Показываем предпросмотр
-    post_text = f"""
-🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
+#     # Показываем предпросмотр
+#     post_text = f"""
+# 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 <b>Дата и время:</b> {start_datetime.strftime('%d.%m.%Y %H:%M')}
+# 📅 <b>Дата и время:</b> {start_datetime.strftime('%d.%m.%Y %H:%M')}
 
-📍 <b>Адрес:</b> {data['address']}
+# 📍 <b>Адрес:</b> {data['address']}
 
-👥 <b>Требуется человек:</b> {data['workers_count']}
+# 👥 <b>Требуется человек:</b> {data['workers_count']}
 
-⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
+# ⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
 
-📝 <b>Суть работы:</b>
-{data['work_description']}
+# 📝 <b>Суть работы:</b>
+# {data['work_description']}
 
-💰 <b>Оплата:</b> {price} ₽
+# 💰 <b>Оплата:</b> {price} ₽
 
----
-Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
-"""
+# ---
+# Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
+# """
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{data['order_id']}")],
-        [InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_post_data")],
-        [InlineKeyboardButton(text="💰 Изменить цену", callback_data="edit_post_price")],
-        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
-    ])
+#     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#         [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{data['order_id']}")],
+#         [InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_post_data")],
+#         [InlineKeyboardButton(text="💰 Изменить цену", callback_data="edit_post_price")],
+#         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
+#     ])
     
-    await message.answer(
-        f"📝 <b>Предпросмотр поста для канала {data['city_name']}:</b>\n\n{post_text}",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
-    await state.set_state(PostStates.confirming_post)
+#     await message.answer(
+#         f"📝 <b>Предпросмотр поста для канала {data['city_name']}:</b>\n\n{post_text}",
+#         reply_markup=keyboard,
+#         parse_mode="HTML"
+#     )
+#     await state.set_state(PostStates.confirming_post)
 
 @router.callback_query(lambda c: c.data == "edit_post_data")
 async def edit_post_data(callback: CallbackQuery, state: FSMContext):
