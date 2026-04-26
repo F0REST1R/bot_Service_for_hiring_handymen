@@ -122,7 +122,7 @@ async def show_active_orders(message: Message, db: AsyncSession):
             remaining = order.workers_count - assignments_count
             status_text += f" (осталось {remaining} мест)"
         
-        text += f"🏙️ Город: {city.name} ID: `{order.id}`\n"
+        text += f"🏙️ Город: {city.name} ID: <code>{order.id}</code>\n"
         text += f"🕐 Время: {moscow_time.strftime('%d.%m.%Y %H:%M')}\n"
         text += f"👥 Требуется: {order.workers_count} чел.\n"
         text += f"📌 Откликнулось: {assignments_count} чел.\n"
