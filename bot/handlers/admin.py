@@ -1535,25 +1535,47 @@ async def edit_post_price(callback: CallbackQuery, state: FSMContext):
 # ==================== Создание постов ======================== 
 @router.message(F.text == "📝 Создать пост")
 async def create_post_start(message: Message, state: FSMContext, db: AsyncSession):
-    """Начало создания поста - выбор города"""
+    """Создание поста - сначала создаём заявку"""
     if not await is_admin(message.from_user.id, db):
         await message.answer("⛔ У вас нет доступа к этой функции")
         return
     
+    # Создаём новую заявку-заготовку
+    new_order = Order(
+        customer_id=None,
+        city_id=None,
+        full_name="Администратор",
+        contact_phone="",
+        workers_count=0,
+        work_description="",
+        start_datetime=datetime.now(),
+        estimated_hours=0,
+        address="",
+        username_for_contact=None,
+        status='draft'  # Черновик
+    )
+    db.add(new_order)
+    await db.commit()
+    await db.refresh(new_order)
+    
+    await state.update_data(order_id=new_order.id)
+    
+    # Запрашиваем город
     result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
     cities = result.scalars().all()
     
     if not cities:
         await message.answer("❌ Нет доступных городов с привязанными каналами!")
+        await db.delete(new_order)
+        await db.commit()
         return
     
     keyboard = []
     for city in cities:
         keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
-    keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")])
     
     await message.answer(
-        "📝 <b>Создание новой заявки</b>\n\nВыберите город:",
+        "📝 <b>Создание поста</b>\n\nСначала выберите город:",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
         parse_mode="HTML"
     )
@@ -1561,11 +1583,18 @@ async def create_post_start(message: Message, state: FSMContext, db: AsyncSessio
 
 @router.callback_query(PostStates.choosing_city, lambda c: c.data.startswith("create_post_city_"))
 async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    """Выбор города - продолжаем заполнение"""
     city_id = int(callback.data.split("_")[3])
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
     
     await state.update_data(city_id=city_id, city_name=city.name, channel_id=city.channel_id)
+    
+    # Обновляем заявку с городом
+    data = await state.get_data()
+    order = await db.get(Order, data['order_id'])
+    order.city_id = city_id
+    await db.commit()
     
     await callback.message.answer(
         "💰 <b>Введите оплату</b> (руб./чел.)\nПример: 2500",
@@ -1810,11 +1839,19 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     await state.clear()
 
 async def cancel_create_post(message: Message, state: FSMContext):
+    """Отмена создания поста - возврат в меню администратора"""
     await state.clear()
-    await message.answer("❌ Создание поста отменено", reply_markup=get_main_menu('admin'))
+    await message.answer(
+        "❌ Создание поста отменено",
+        reply_markup=get_main_menu('admin')
+    )
 
 @router.callback_query(lambda c: c.data == "cancel_create_post")
 async def cancel_create_post_callback(callback: CallbackQuery, state: FSMContext):
+    """Отмена создания поста из callback - возврат в меню администратора"""
     await state.clear()
-    await callback.message.answer("❌ Создание поста отменено")
+    await callback.message.answer(
+        "❌ Создание поста отменено",
+        reply_markup=get_main_menu('admin')
+    )
     await callback.answer()
