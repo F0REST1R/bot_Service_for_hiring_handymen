@@ -9,8 +9,11 @@ from bot.handlers import registration, customer, worker, admin, post_creator
 from bot.database.database import get_db
 from bot.utils.scheduler import start_scheduler
 from bot.utils.google_sheets import GoogleSheetsClient
+from bot.handlers import cancel 
+from bot.handlers.cancel import router as cancel_router 
 
 logging.basicConfig(level=logging.INFO)
+
 
 class DatabaseMiddleware:
     """Middleware для внедрения сессии БД"""
@@ -68,8 +71,8 @@ async def main():
     dp.include_router(customer.router)
     dp.include_router(worker.router)
     dp.include_router(admin.router)
-    # dp.include_router(posts.router)
     dp.include_router(post_creator.router)
+    dp.include_router(cancel_router)
     
     logging.info("Bot started successfully!")
     
