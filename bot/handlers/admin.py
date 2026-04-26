@@ -995,42 +995,28 @@ async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSessi
     await callback.answer(f"✅ Отправлено {sent} исполнителям")
 
 @router.callback_query(lambda c: c.data.startswith("admin_create_post_"))
-async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
-    """Создание поста из заявки - сначала запрашиваем цену"""
+async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot, google_client=None):
+    """Создание поста из заявки - сразу запрашиваем только цену"""
     order_id = int(callback.data.split("_")[3])
     
-    # Получаем заявку
-    result = await db.execute(select(Order).where(Order.id == order_id))
-    order = result.scalar_one()
+    result = await db.execute(select(Order, City).join(City, Order.city_id == City.id).where(Order.id == order_id))
+    order_data = result.first()
+    
+    if not order_data:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+    
+    order, city = order_data
     
     if order.channel_post_id:
         await callback.answer("Пост для этой заявки уже создан!", show_alert=True)
         return
     
-    # Получаем город
-    result = await db.execute(select(City).where(City.id == order.city_id))
-    city = result.scalar_one()
-    
     if not city.channel_id:
         await callback.answer(f"К городу {city.name} не привязан канал!", show_alert=True)
         return
     
-    # Сохраняем данные в состояние (без datetime)
-    await state.update_data(
-        order_id=order_id,
-        city_id=city.id,
-        city_name=city.name,
-        channel_id=city.channel_id,
-        workers_count=order.workers_count,
-        start_datetime_str=order.start_datetime.isoformat(),
-        start_datetime_text=format_datetime_moscow(order.start_datetime),
-        estimated_hours=order.estimated_hours,
-        address=order.address,
-        work_description=order.work_description,
-        current_price=order.price_per_person if order.price_per_person else 0
-    )
-    
-    # Запрашиваем цену
+    # Запрашиваем только цену
     await callback.message.answer(
         f"💰 <b>Введите оплату для заявки #{order_id}</b> (руб./чел.)\n\n"
         f"Пример: 2500\n\n"
@@ -1038,13 +1024,13 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
         f"Адрес: {order.address}\n"
         f"Требуется: {order.workers_count} чел.",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"publish_post_{order_id}")],
+            [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_order_{order_id}")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
         ]),
         parse_mode="HTML"
     )
-    await state.set_state(PostStates.entering_price)
     await callback.answer()
-
 @router.callback_query(lambda c: c.data.startswith("confirm_post_"))
 async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot, google_client=None):
     """Подтверждение и публикация поста"""
@@ -1855,4 +1841,108 @@ async def cancel_create_post_callback(callback: CallbackQuery, state: FSMContext
         "❌ Создание поста отменено",
         reply_markup=get_main_menu('admin')
     )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("edit_order_"))
+async def edit_order_start(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    """Редактирование заявки перед публикацией"""
+    order_id = int(callback.data.split("_")[2])
+    
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+    
+    await state.update_data(edit_order_id=order_id)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 Изменить оплату", callback_data=f"edit_price_{order_id}")],
+        [InlineKeyboardButton(text="👥 Изменить количество", callback_data=f"edit_workers_{order_id}")],
+        [InlineKeyboardButton(text="📍 Изменить адрес", callback_data=f"edit_address_{order_id}")],
+        [InlineKeyboardButton(text="📝 Изменить описание", callback_data=f"edit_desc_{order_id}")],
+        [InlineKeyboardButton(text="📅 Изменить дату", callback_data=f"edit_date_{order_id}")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data=f"back_to_post_{order_id}")]
+    ])
+    
+    await callback.message.answer(
+        f"✏️ <b>Редактирование заявки #{order_id}</b>\n\nЧто изменить?",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("back_to_post_"))
+async def back_to_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    """Вернуться к вводу цены"""
+    order_id = int(callback.data.split("_")[2])
+    
+    result = await db.execute(select(Order, City).join(City, Order.city_id == City.id).where(Order.id == order_id))
+    order_data = result.first()
+    order, city = order_data
+    
+    await callback.message.answer(
+        f"💰 <b>Введите оплату для заявки #{order_id}</b> (руб./чел.)\n\n"
+        f"Пример: 2500\n\n"
+        f"Город: {city.name}\n"
+        f"Адрес: {order.address}\n"
+        f"Требуется: {order.workers_count} чел.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"publish_post_{order_id}")],
+            [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_order_{order_id}")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
+        ]),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("publish_post_"))
+async def publish_post_from_order(callback: CallbackQuery, db: AsyncSession, bot, google_client=None):
+    """Публикация поста из заявки"""
+    order_id = int(callback.data.split("_")[2])
+    
+    # Получаем заявку и город
+    result = await db.execute(select(Order, City).join(City, Order.city_id == City.id).where(Order.id == order_id))
+    order_data = result.first()
+    
+    if not order_data:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
+    
+    order, city = order_data
+    
+    if order.channel_post_id:
+        await callback.answer("Пост уже создан!", show_alert=True)
+        return
+    
+    if not order.price_per_person:
+        await callback.answer("Сначала укажите стоимость!", show_alert=True)
+        return
+    
+    # Формируем и публикуем пост
+    post_text = format_post_text(order, order.price_per_person)
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order.id}")]
+    ])
+    
+    try:
+        sent_message = await bot.send_message(
+            chat_id=city.channel_id,
+            text=post_text,
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+        order.channel_post_id = sent_message.message_id
+        order.posted_at = datetime.now()
+        await db.commit()
+        
+        await callback.message.answer(
+            f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>",
+            parse_mode="HTML"
+        )
+        
+        await show_order_details(callback.message, db)
+        
+    except Exception as e:
+        await callback.message.answer(f"❌ Ошибка: {str(e)}")
+    
     await callback.answer()
