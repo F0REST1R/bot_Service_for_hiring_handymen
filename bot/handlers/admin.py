@@ -995,10 +995,11 @@ async def resend_post(callback: CallbackQuery, state: FSMContext, db: AsyncSessi
     await callback.answer(f"✅ Отправлено {sent} исполнителям")
 
 @router.callback_query(lambda c: c.data.startswith("admin_create_post_"))
-async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot, google_client=None):
-    """Создание поста из заявки - сразу запрашиваем только цену"""
+async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    """Создание поста из заявки - сначала запрашиваем цену"""
     order_id = int(callback.data.split("_")[3])
     
+    # Получаем заявку и город
     result = await db.execute(select(Order, City).join(City, Order.city_id == City.id).where(Order.id == order_id))
     order_data = result.first()
     
@@ -1016,21 +1017,83 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
         await callback.answer(f"К городу {city.name} не привязан канал!", show_alert=True)
         return
     
-    # Запрашиваем только цену
+    # Сохраняем данные в состояние
+    await state.update_data(
+        order_id=order_id,
+        city_id=city.id,
+        city_name=city.name,
+        channel_id=city.channel_id,
+        workers_count=order.workers_count,
+        start_datetime_str=order.start_datetime.isoformat(),
+        start_datetime_text=format_datetime_moscow(order.start_datetime),
+        estimated_hours=order.estimated_hours,
+        address=order.address,
+        work_description=order.work_description,
+        current_price=order.price_per_person if order.price_per_person else 0
+    )
+    
+    # Запрашиваем цену (без кнопок, только поле ввода)
     await callback.message.answer(
         f"💰 <b>Введите оплату для заявки #{order_id}</b> (руб./чел.)\n\n"
         f"Пример: 2500\n\n"
         f"Город: {city.name}\n"
         f"Адрес: {order.address}\n"
-        f"Требуется: {order.workers_count} чел.",
+        f"Требуется: {order.workers_count} чел.\n\n"
+        f"Или нажмите ❌ Отмена",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"publish_post_{order_id}")],
-            [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_order_{order_id}")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
         ]),
         parse_mode="HTML"
     )
+    await state.set_state(PostStates.entering_price_order)
     await callback.answer()
+
+@router.message(PostStates.entering_price_order)
+async def process_post_price_input(message: Message, state: FSMContext):
+    """Обработка ввода цены для поста из заявки"""
+    if message.text == "❌ Отмена":
+        await cancel_create_post(message, state)
+        return
+    
+    try:
+        price = int(message.text)
+        if price <= 0:
+            await message.answer("❌ Стоимость должна быть больше 0! Введите заново:")
+            return
+    except ValueError:
+        await message.answer("❌ Введите число! Пример: 2500")
+        return
+    
+    # Сохраняем цену
+    await state.update_data(current_price=price)
+    data = await state.get_data()
+    
+    # Показываем предпросмотр и кнопки действий
+    post_text = f"""
+🏗️ <b>ПРЕДПРОСМОТР ПОСТА</b>
+
+📋 <b>Заявка #{data['order_id']}</b>
+📍 <b>Адрес:</b> {data['address']}
+👥 <b>Требуется:</b> {data['workers_count']} чел.
+⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
+📝 <b>Описание:</b> {data['work_description']}
+💰 <b>Оплата:</b> {price} руб./чел.
+"""
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{data['order_id']}")],
+        [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit_post_data")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
+    ])
+    
+    await message.answer(
+        f"{post_text}\n\n"
+        f"<b>Что дальше?</b>",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await state.set_state(PostStates.confirming_post)
+
 @router.callback_query(lambda c: c.data.startswith("confirm_post_"))
 async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot, google_client=None):
     """Подтверждение и публикация поста"""

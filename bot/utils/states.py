@@ -43,6 +43,7 @@ class PostStates(StatesGroup):
     """Состояния создания поста"""
     choosing_city = State()
     entering_price = State() 
+    entering_price_order = State() 
     editing_workers_count = State()
     editing_post = State()
     editing_date = State()
