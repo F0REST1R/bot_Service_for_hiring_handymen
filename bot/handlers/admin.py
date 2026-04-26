@@ -96,7 +96,7 @@ async def show_active_orders(message: Message, db: AsyncSession):
         return
     
     text = "📋 <b>Активные заявки на сегодня и завтра</b>\n"
-    text += "<b>Для просмотра деталей отправьте:</b> `Заявка <ID>`\n\n"
+    text += "<b>Для просмотра деталей отправьте:</b> <code> Заявка ID </code>\n\n"
     
     for order, city, moscow_time in filtered_orders:
         # Получаем количество откликнувшихся
