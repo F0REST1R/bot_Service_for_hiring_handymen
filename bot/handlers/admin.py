@@ -1979,17 +1979,41 @@ async def admin_confirm_post(callback: CallbackQuery, state: FSMContext, db: Asy
     await db.commit()
     await db.refresh(order)
 
+    # 🟢 ДОБАВЬ ЭТО
+    google_client = callback.bot.get("google_client")
+    if google_client:
+        from bot.utils.time_utils import format_datetime_moscow
+
+        google_client.save_order({
+            'order_id': order.id,
+            'created_at': format_datetime_moscow(order.created_at),
+            'city': data.get('city_name'),
+            'customer_name': order.full_name,
+            'customer_phone': order.contact_phone,
+            'workers_count': order.workers_count,
+            'start_datetime': format_datetime_moscow(order.start_datetime),
+            'estimated_hours': order.estimated_hours,
+            'address': order.address,
+            'work_description': order.work_description,
+            'price_per_person': order.price_per_person,
+            'price_for_client': order.price_for_client,
+            'post_status': 'Опубликован',
+            'recruitment_status': 'Набор открыт',
+            'responses_count': 0
+        })
+
+    # пост
     post_text = f"""
 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 {data.get('start_datetime_text')}
-📍 {data.get('address')}
-👥 {data.get('workers_count')} чел.
-⏱️ {data.get('estimated_hours')} ч.
+📅 Дата и время: {data.get('start_datetime_text')}
+📍 Адрес: {data.get('address')}
+👥 Требуется человек: {data.get('workers_count')} чел.
+⏱️ Продолжительность: {data.get('estimated_hours')} ч.
 
-📝 {data.get('work_description')}
+📝 Суть работы: {data.get('work_description')}
 
-💰 {data.get('price_per_person')} ₽
+💰 Оплата: {data.get('price_per_person')} ₽
 """
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
