@@ -1867,14 +1867,17 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
     post_text = f"""
 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 {format_datetime_moscow(order.start_datetime)}
-📍 {order.address}
-👥 {order.workers_count} чел.
-⏱️ {order.estimated_hours} ч.
+📅 Дата и время: {format_datetime_moscow(order.start_datetime)}
+📍 Адрес: {order.address}
+👥 Требуется человек: {order.workers_count} чел.
+⏱️ Продолжительность:  {order.estimated_hours} ч.
 
-📝 {order.work_description}
+📝 Суть работы: {order.work_description}
 
-💰 {order.price_per_person} ₽
+💰 Оплата: {order.price_per_person} ₽
+
+---
+Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
 """
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
