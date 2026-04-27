@@ -204,11 +204,11 @@ class GoogleSheetsClient:
             for i, order in enumerate(all_orders[1:], start=2):
                 if order[0] == str(order_id):
                     # Получаем текущее количество откликов
-                    current_count = int(order[13]) if order[13] and order[13] != '' else 0
+                    current_count = int(order[14]) if order[13] and order[13] != '' else 0
                     new_count = current_count + 1
                     
                     # Обновляем количество
-                    orders_sheet.update_cell(i, 14, new_count)  # Колонка N (14)
+                    orders_sheet.update_cell(i, 15, new_count)  # Колонка N (14)
                     
                     # Добавляем запись об отклике в лист "Отклики"
                     try:

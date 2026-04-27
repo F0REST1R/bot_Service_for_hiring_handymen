@@ -779,7 +779,7 @@ async def show_analytics(message: Message, db: AsyncSession):
     )
 
 @router.callback_query(lambda c: c.data.startswith("apply_order_"))
-async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
+async def apply_for_order(callback: CallbackQuery, db: AsyncSession, google_client=None):
     """Обработчик нажатия кнопки 'Я поеду' - универсальный, кнопка не меняется"""
     order_id = int(callback.data.split("_")[2])
     
@@ -928,9 +928,14 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession):
         )
 
         # Обновляем Google Sheets
-        google_client = callback.bot.get('google_client')
-        if google_client:
-            google_client.add_response(order_id, worker.full_name, worker.phone)
+        try:
+            if google_client:
+                google_client.add_response(order_id, worker.full_name, worker.phone)
+            else:
+                print("⚠️ google_client не передан в apply_for_order")
+
+        except Exception as e:
+            print(f"❌ Ошибка обновления Google Sheets: {e}")
     except:
         pass
     
