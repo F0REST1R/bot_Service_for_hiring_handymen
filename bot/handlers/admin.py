@@ -1187,7 +1187,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
         return
     
     # Если нет цены исполнителя в состоянии - запрашиваем
-    current_price = data.get('current_price')
+    current_price = data.get('price_per_person') or data.get('current_price')
     if not current_price and order.price_per_person:
         current_price = order.price_per_person
     elif not current_price:
@@ -1543,6 +1543,10 @@ async def edit_field(callback: CallbackQuery, state: FSMContext):
 async def save_edited_field(message: Message, state: FSMContext, db: AsyncSession):
     """Сохранение отредактированного поля"""
     data = await state.get_data()
+    if data.get('price_per_person'):
+        await state.update_data(current_price=data['price_per_person'])
+    if data.get('current_price') and not data.get('price_per_person'):
+        await state.update_data(price_per_person=data['current_price'])
     field = data.get('edit_field')
     new_value = message.text
     
@@ -1600,14 +1604,19 @@ async def save_edited_field(message: Message, state: FSMContext, db: AsyncSessio
     # Получаем цены (сохраняем из состояния)
     price_per_person = data.get('price_per_person', 0)
     price_for_client = data.get('price_for_client', 0)
+    order_id = data.get('order_id')
+    city_id = data.get('city_id')
     
-    # Форматируем дату для отображения
-    moscow_time = format_datetime_moscow(start_datetime)
+    # Обязательно сохраняем order_id и city_id, если они есть
+    if not order_id:
+        await message.answer("❌ Ошибка: ID заявки не найден")
+        await state.clear()
+        return
     
     post_text = f"""
 🏗️ <b>ПРЕДПРОСМОТР ПОСТА</b>
 
-📋 <b>Заявка #{data.get('order_id', 'Не указан')}</b>
+📋 <b>Заявка #{order_id}</b>
 📍 <b>Адрес:</b> {data.get('address', 'не указан')}
 👥 <b>Требуется:</b> {data.get('workers_count', 'не указано')} чел.
 ⏱️ <b>Продолжительность:</b> {data.get('estimated_hours', 0)} ч.
@@ -1615,12 +1624,11 @@ async def save_edited_field(message: Message, state: FSMContext, db: AsyncSessio
 💰 <b>Оплата:</b> {price_per_person} руб./чел.
 """
     
-    # Для заявки от клиента показываем только оплату, для админского поста - обе цены
     if price_for_client > 0:
         post_text += f"💰 <b>Стоимость для клиента:</b> {price_for_client} руб./чел.\n"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{data.get('order_id')}")],
+        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{order_id}")],
         [InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_post_data")],
         [InlineKeyboardButton(text="💰 Изменить цену", callback_data="edit_post_price")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
