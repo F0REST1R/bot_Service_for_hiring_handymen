@@ -1863,10 +1863,7 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
     await db.commit()
     await db.refresh(order)
 
-    try:
-        google_client = bot["google_client"]
-    except KeyError:
-        google_client = None
+    google_client = bot.get('google_client')
 
     # отправка
     if google_client:
@@ -1982,7 +1979,7 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
 #     await state.set_state(PostStates.confirming_post)
 
 @router.callback_query(lambda c: c.data == "admin_confirm_post")
-async def admin_confirm_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot):
+async def admin_confirm_post(callback: CallbackQuery, state: FSMContext, db: AsyncSession, bot, google_client = None):
     data = await state.get_data()
 
     from datetime import datetime
