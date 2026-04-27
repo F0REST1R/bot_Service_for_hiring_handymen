@@ -1831,7 +1831,14 @@ async def admin_price_worker(message: Message, state: FSMContext):
     await state.set_state(PostStates.entering_price_client_admin)
 
 @router.message(PostStates.entering_price_client_admin)
-async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bot, google_client = None):
+async def admin_finish(
+    message: Message,
+    state: FSMContext,
+    db: AsyncSession,
+    bot,
+    google_client=None
+):
+    # --- валидация ---
     try:
         price_client = int(message.text)
         if price_client <= 0:
@@ -1844,6 +1851,7 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
 
     start_datetime = datetime.fromisoformat(data['start_datetime_str'])
 
+    # --- создание заказа ---
     order = Order(
         customer_id=None,
         city_id=data['city_id'],
@@ -1863,40 +1871,46 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
     await db.commit()
     await db.refresh(order)
 
-    google_client = bot.get('google_client')
+    from bot.utils.time_utils import format_datetime_moscow
 
-    # отправка
-    if google_client:
-        from bot.utils.time_utils import format_datetime_moscow
+    # --- Google Sheets ---
+    try:
+        if google_client:
+            order_data_for_sheet = {
+                'order_id': order.id,
+                'created_at': format_datetime_moscow(order.created_at),
+                'city': data.get('city_name'),
+                'customer_name': order.full_name,
+                'customer_phone': order.contact_phone,
+                'workers_count': order.workers_count,
+                'start_datetime': format_datetime_moscow(order.start_datetime),
+                'estimated_hours': order.estimated_hours,
+                'address': order.address,
+                'work_description': order.work_description,
+                'price_per_person': order.price_per_person,
+                'price_for_client': order.price_for_client,
+                'post_status': 'Опубликован',
+                'recruitment_status': 'Набор открыт',
+                'responses_count': 0,
+                'source': 'admin'  # 🔥 полезно для аналитики
+            }
 
-        order_data_for_sheet = {
-            'order_id': order.id,
-            'created_at': format_datetime_moscow(order.created_at),
-            'city': data.get('city_name'),
-            'customer_name': order.full_name,
-            'customer_phone': order.contact_phone,
-            'workers_count': order.workers_count,
-            'start_datetime': format_datetime_moscow(order.start_datetime),
-            'estimated_hours': order.estimated_hours,
-            'address': order.address,
-            'work_description': order.work_description,
-            'price_per_person': order.price_per_person,
-            'price_for_client': order.price_for_client,
-            'post_status': 'Опубликован',
-            'recruitment_status': 'Набор открыт',
-            'responses_count': 0
-        }
+            google_client.save_order(order_data_for_sheet)
 
-        google_client.save_order(order_data_for_sheet)
+        else:
+            print("⚠️ google_client не передан в admin_finish")
 
-    # пост
+    except Exception as e:
+        print(f"❌ Ошибка при записи в Google Sheets: {e}")
+
+    # --- пост ---
     post_text = f"""
 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
 📅 Дата и время: {format_datetime_moscow(order.start_datetime)}
 📍 Адрес: {order.address}
 👥 Требуется человек: {order.workers_count} чел.
-⏱️ Продолжительность:  {order.estimated_hours} ч.
+⏱️ Продолжительность: {order.estimated_hours} ч.
 
 📝 Суть работы: {order.work_description}
 
