@@ -1079,7 +1079,7 @@ async def process_post_price_input(message: Message, state: FSMContext):
         reply_markup=ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text="❌ Отмена")]],
             resize_keyboard=True
-        )
+        ), parse_mode="HTML"
     )
     await state.set_state(PostStates.entering_price_client)
 
@@ -1584,33 +1584,43 @@ async def save_edited_field(message: Message, state: FSMContext, db: AsyncSessio
     
     await message.answer(f"✅ Поле обновлено!")
     
-    # Показываем обновлённый предпросмотр
+    # Получаем обновленные данные
     data = await state.get_data()
-    start_datetime = datetime.fromisoformat(data['start_datetime_str'])
-    price = data.get('current_price', 0)
+    
+    # Восстанавливаем datetime из строки
+    from bot.utils.time_utils import format_datetime_moscow
+    start_datetime = None
+    if data.get('start_datetime_str'):
+        start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+    else:
+        await message.answer("❌ Ошибка: дата не найдена")
+        await state.clear()
+        return
+    
+    # Получаем цены (сохраняем из состояния)
+    price_per_person = data.get('price_per_person', 0)
+    price_for_client = data.get('price_for_client', 0)
+    
+    # Форматируем дату для отображения
+    moscow_time = format_datetime_moscow(start_datetime)
     
     post_text = f"""
-🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
+🏗️ <b>ПРЕДПРОСМОТР ПОСТА</b>
 
-📅 <b>Дата и время:</b> {start_datetime.strftime('%d.%m.%Y %H:%M')}
-
-📍 <b>Адрес:</b> {data['address']}
-
-👥 <b>Требуется человек:</b> {data['workers_count']}
-
-⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
-
-📝 <b>Суть работы:</b>
-{data['work_description']}
-
-💰 <b>Оплата:</b> {price} ₽
-
----
-Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
+📋 <b>Заявка #{data.get('order_id', 'Не указан')}</b>
+📍 <b>Адрес:</b> {data.get('address', 'не указан')}
+👥 <b>Требуется:</b> {data.get('workers_count', 'не указано')} чел.
+⏱️ <b>Продолжительность:</b> {data.get('estimated_hours', 0)} ч.
+📝 <b>Описание:</b> {data.get('work_description', 'не указано')}
+💰 <b>Оплата:</b> {price_per_person} руб./чел.
 """
     
+    # Для заявки от клиента показываем только оплату, для админского поста - обе цены
+    if price_for_client > 0:
+        post_text += f"💰 <b>Стоимость для клиента:</b> {price_for_client} руб./чел.\n"
+    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{data['order_id']}")],
+        [InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"confirm_post_{data.get('order_id')}")],
         [InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_post_data")],
         [InlineKeyboardButton(text="💰 Изменить цену", callback_data="edit_post_price")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
@@ -1627,14 +1637,58 @@ async def save_edited_field(message: Message, state: FSMContext, db: AsyncSessio
 @router.callback_query(lambda c: c.data == "edit_post_price")
 async def edit_post_price(callback: CallbackQuery, state: FSMContext):
     """Редактирование цены"""
+    # Получаем текущие данные
+    data = await state.get_data()
+    
+    # Проверяем, есть ли цена для клиента
+    if data.get('price_for_client', 0) > 0:
+        # Если есть, сначала спрашиваем какую цену менять
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💰 Оплата исполнителя", callback_data="edit_worker_price")],
+            [InlineKeyboardButton(text="🏢 Стоимость для клиента", callback_data="edit_client_price")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
+        ])
+        await callback.message.answer(
+            "💰 <b>Какую цену вы хотите изменить?</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    else:
+        # Если только цена исполнителя
+        await callback.message.answer(
+            "💰 <b>Введите новую оплату для исполнителя</b> (руб./чел.)\nПример: 3000",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
+            ]),
+            parse_mode="HTML"
+        )
+        await state.set_state(PostStates.entering_price)
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "edit_worker_price")
+async def edit_worker_price(callback: CallbackQuery, state: FSMContext):
+    """Редактирование цены исполнителя"""
     await callback.message.answer(
-        "💰 <b>Введите новую оплату</b> (руб./чел.)\nПример: 3000",
+        "💰 <b>Введите новую оплату для исполнителя</b> (руб./чел.)\nПример: 3000",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
         ]),
         parse_mode="HTML"
     )
     await state.set_state(PostStates.entering_price)
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "edit_client_price")
+async def edit_client_price(callback: CallbackQuery, state: FSMContext):
+    """Редактирование цены для клиента"""
+    await callback.message.answer(
+        "💰 <b>Введите новую стоимость для клиента</b> (руб./чел.)\nПример: 5000",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
+        ]),
+        parse_mode="HTML"
+    )
+    await state.set_state(PostStates.entering_price_client)
     await callback.answer()
 
 # ==================== Создание постов ======================== 
