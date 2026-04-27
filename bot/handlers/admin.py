@@ -1863,9 +1863,12 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
     await db.commit()
     await db.refresh(order)
 
-    if "google_client" in bot:
+    try:
         google_client = bot["google_client"]
+    except KeyError:
+        google_client = None
 
+    # отправка
     if google_client:
         from bot.utils.time_utils import format_datetime_moscow
 
