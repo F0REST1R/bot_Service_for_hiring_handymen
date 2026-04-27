@@ -2099,29 +2099,29 @@ async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, 
     await state.set_state(PostStates.entering_price)
     await callback.answer()
 
-@router.message(PostStates.entering_price)
-async def create_post_price(message: Message, state: FSMContext):
-    if message.text == "❌ Отмена":
-        await cancel_create_post(message, state)
-        return
+# @router.message(PostStates.entering_price)
+# async def create_post_price(message: Message, state: FSMContext):
+#     if message.text == "❌ Отмена":
+#         await cancel_create_post(message, state)
+#         return
     
-    try:
-        price = int(message.text)
-        if price <= 0:
-            await message.answer("❌ Стоимость должна быть больше 0!")
-            return
-        await state.update_data(price_per_person=price)
-    except ValueError:
-        await message.answer("❌ Введите число! Пример: 2500")
-        return
+#     try:
+#         price = int(message.text)
+#         if price <= 0:
+#             await message.answer("❌ Стоимость должна быть больше 0!")
+#             return
+#         await state.update_data(price_per_person=price)
+#     except ValueError:
+#         await message.answer("❌ Введите число! Пример: 2500")
+#         return
     
-    # Переходим к количеству человек (не к цене клиента)
-    await message.answer(
-        "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
-        reply_markup=get_cancel_keyboard(),
-        parse_mode="HTML"
-    )
-    await state.set_state(PostStates.editing_workers_count)
+#     # Переходим к количеству человек (не к цене клиента)
+#     await message.answer(
+#         "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
+#         reply_markup=get_cancel_keyboard(),
+#         parse_mode="HTML"
+#     )
+#     await state.set_state(PostStates.editing_workers_count)
 
 # @router.message(PostStates.entering_price_client)
 # async def create_post_price_client(message: Message, state: FSMContext):
@@ -2483,8 +2483,6 @@ async def publish_post_from_order(callback: CallbackQuery, db: AsyncSession, bot
             reply_markup=get_main_menu("admin"),
             parse_mode="HTML"
         )
-        
-        await show_order_details(callback.message, db)
         
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка: {str(e)}")

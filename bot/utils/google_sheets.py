@@ -54,21 +54,6 @@ class GoogleSheetsClient:
                 ]
                 orders_sheet.append_row(headers, value_input_option="USER_ENTERED")
                 logger.info("✅ Создан лист 'Заявки'")
-            
-            # Создаем лист для финансов, если его нет
-            try:
-                finance_sheet = self.sheet.worksheet("Финансы")
-                logger.info("Лист 'Финансы' уже существует")
-            except gspread.WorksheetNotFound:
-                finance_sheet = self.sheet.add_worksheet(
-                    title="Финансы", rows=100, cols=10
-                )
-                headers = [
-                    "Дата", "Тип операции", "Сумма", 
-                    "ID заявки", "Описание", "Примечание"
-                ]
-                finance_sheet.append_row(headers, value_input_option="USER_ENTERED")
-                logger.info("✅ Создан лист 'Финансы'")
                 
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации листов: {e}")
@@ -96,11 +81,8 @@ class GoogleSheetsClient:
                 order_data.get('price_per_person', 0),
                 order_data.get('price_for_client', 0),
                 order_data.get('post_status', 'Опубликован'),
-                order_data.get('recruitment_status', 'Набор открыт'),
-                order_data.get('responses_count', 0),
-                0,  # Общий доход (заполнится позже)
-                0,  # Расходы на персонал (заполнится позже)
-                0   # Чистая прибыль (заполнится позже)
+                order_data.get('recruitment_status'),
+                order_data.get('responses_count', 0)
             ]
             
             orders_sheet.append_row(row, value_input_option="USER_ENTERED")
@@ -204,7 +186,7 @@ class GoogleSheetsClient:
             for i, order in enumerate(all_orders[1:], start=2):
                 if order[0] == str(order_id):
                     # Получаем текущее количество откликов
-                    current_count = int(order[14]) if order[13] and order[13] != '' else 0
+                    current_count = int(order[14]) if order[14] and order[14] != '' else 0
                     new_count = current_count + 1
                     
                     # Обновляем количество
@@ -221,6 +203,18 @@ class GoogleSheetsClient:
                         headers = ["ID заявки", "Исполнитель", "Телефон", "Дата отклика"]
                         responses_sheet.append_row(headers, value_input_option="USER_ENTERED")
                     
+                    # получаем нужное количество людей (колонка F = индекс 5)
+                    workers_needed = int(order[5]) if order[5] else 0
+
+                    # логика статуса
+                    if new_count >= workers_needed:
+                        status = "Набор закрыт"
+                    else:
+                        status = "Набор открыт"
+
+                    # обновляем колонку N (14)
+                    orders_sheet.update_cell(i, 14, status)
+
                     responses_sheet.append_row([
                         order_id, worker_name, worker_phone,
                         datetime.now().strftime('%d.%m.%Y %H:%M')
