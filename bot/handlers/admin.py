@@ -1830,7 +1830,7 @@ async def admin_price_worker(message: Message, state: FSMContext):
     await message.answer("💰 Цена для клиента:")
     await state.set_state(PostStates.entering_price_client)
 
-@router.message(PostStates.entering_price_client)
+@router.message(PostStates.entering_price_client_admin)
 async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bot):
     try:
         price_client = int(message.text)
@@ -2003,7 +2003,7 @@ async def admin_confirm_post(callback: CallbackQuery, state: FSMContext, db: Asy
     await callback.message.answer("✅ Пост опубликован")
     await state.clear()
     await callback.answer()
-    
+
 @router.callback_query(PostStates.choosing_city, lambda c: c.data.startswith("create_post_city_"))
 async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     """Выбор города - продолжаем заполнение"""
@@ -2051,33 +2051,33 @@ async def create_post_price(message: Message, state: FSMContext):
     )
     await state.set_state(PostStates.editing_workers_count)
 
-@router.message(PostStates.entering_price_client)
-async def create_post_price_client(message: Message, state: FSMContext):
-    """Ввод цены для клиента при создании поста"""
-    if message.text == "❌ Отмена":
-        await cancel_create_post(message, state)
-        return
+# @router.message(PostStates.entering_price_client)
+# async def create_post_price_client(message: Message, state: FSMContext):
+#     """Ввод цены для клиента при создании поста"""
+#     if message.text == "❌ Отмена":
+#         await cancel_create_post(message, state)
+#         return
     
-    try:
-        price_client = int(message.text)
-        if price_client < 0:
-            await message.answer("❌ Стоимость должна быть больше или равна 0!")
-            return
-        if price_client == 0:
-            # Если 0, используем ту же цену, что и для исполнителя
-            data = await state.get_data()
-            price_client = data.get('price_per_person', 0)
-        await state.update_data(price_for_client=price_client)
-    except ValueError:
-        await message.answer("❌ Введите число! Пример: 4000")
-        return
+#     try:
+#         price_client = int(message.text)
+#         if price_client < 0:
+#             await message.answer("❌ Стоимость должна быть больше или равна 0!")
+#             return
+#         if price_client == 0:
+#             # Если 0, используем ту же цену, что и для исполнителя
+#             data = await state.get_data()
+#             price_client = data.get('price_per_person', 0)
+#         await state.update_data(price_for_client=price_client)
+#     except ValueError:
+#         await message.answer("❌ Введите число! Пример: 4000")
+#         return
     
-    await message.answer(
-        "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
-        reply_markup=get_cancel_keyboard(),
-        parse_mode="HTML"
-    )
-    await state.set_state(PostStates.editing_workers_count)
+#     await message.answer(
+#         "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
+#         reply_markup=get_cancel_keyboard(),
+#         parse_mode="HTML"
+#     )
+#     await state.set_state(PostStates.editing_workers_count)
 
 @router.message(PostStates.editing_workers_count)
 async def create_post_workers_count(message: Message, state: FSMContext):
