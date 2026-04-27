@@ -1034,7 +1034,7 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
     
     # Запрашиваем цену (без кнопок, только поле ввода)
     await callback.message.answer(
-        f"💰 <b>Введите оплату для ИСПОЛНИТЕЛЯ #{order_id}</b> (руб./чел.)\n\n",
+        f"💰 <b>Введите оплату для ИСПОЛНИТЕЛЯ #{order_id}</b> (руб./чел.)\n\n"
         f"Сколько получит рабочий за эту работу?\n"
         f"Пример: 2500\n\n"
         f"Город: {city.name}\n"
@@ -1315,7 +1315,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     
     await state.clear()
     await callback.answer()
-    
+
 @router.callback_query(lambda c: c.data.startswith("publish_post_"))
 async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
     """Непосредственная публикация поста"""
