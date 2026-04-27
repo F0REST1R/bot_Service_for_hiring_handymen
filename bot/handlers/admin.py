@@ -1828,7 +1828,7 @@ async def admin_price_worker(message: Message, state: FSMContext):
     await state.update_data(price_per_person=price)
 
     await message.answer("💰 Цена для клиента:")
-    await state.set_state(PostStates.entering_price_client)
+    await state.set_state(PostStates.entering_price_client_admin)
 
 @router.message(PostStates.entering_price_client_admin)
 async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bot):
