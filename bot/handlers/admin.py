@@ -1507,6 +1507,11 @@ async def edit_post_data(callback: CallbackQuery, state: FSMContext):
         [InlineKeyboardButton(text="📅 Дата и время", callback_data="edit_field_date")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_edit")]
     ])
+
+    try:
+        await callback.message.delete()
+    except:
+        pass
     
     await callback.message.answer(
         "✏️ <b>Что вы хотите отредактировать?</b>",
@@ -1520,7 +1525,12 @@ async def edit_field(callback: CallbackQuery, state: FSMContext):
     """Редактирование конкретного поля"""
     field = callback.data.split("_")[2]
     await state.update_data(edit_field=field)
-    
+
+    try:
+        await callback.message.delete()
+    except:
+        pass
+
     prompts = {
         "address": "📍 <b>Введите новый адрес:</b>\nПример: г. Мытищи, ул. Железнодорожная д.20",
         "workers": "👥 <b>Введите новое количество человек:</b>\nПример: 5",
@@ -1764,7 +1774,7 @@ async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, 
     await db.commit()
     
     await callback.message.answer(
-        "💰 <b>Введите оплату</b> (руб./чел.)\nПример: 2500",
+        "💰 <b>Введите оплату для исполнителя</b> (руб./чел.)\nПример: 2500",
         reply_markup=get_cancel_keyboard(),
         parse_mode="HTML"
     )
@@ -1783,8 +1793,44 @@ async def create_post_price(message: Message, state: FSMContext):
             await message.answer("❌ Стоимость должна быть больше 0!")
             return
         await state.update_data(price_per_person=price)
+        await state.update_data(current_price=price)  # Сохраняем в оба поля
     except ValueError:
         await message.answer("❌ Введите число! Пример: 2500")
+        return
+    
+    # Запрашиваем цену для клиента
+    await message.answer(
+        "💰 <b>Введите стоимость ДЛЯ КЛИЕНТА</b> (руб./чел.)\n\n"
+        "Сколько клиент заплатит за эту работу?\n"
+        "Пример: 4000\n\n"
+        "Или отправьте '0' если цена такая же",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="❌ Отмена")]],
+            resize_keyboard=True
+        )
+    )
+    await state.set_state(PostStates.entering_price_client)
+
+
+@router.message(PostStates.entering_price_client)
+async def create_post_price_client(message: Message, state: FSMContext):
+    """Ввод цены для клиента при создании поста"""
+    if message.text == "❌ Отмена":
+        await cancel_create_post(message, state)
+        return
+    
+    try:
+        price_client = int(message.text)
+        if price_client < 0:
+            await message.answer("❌ Стоимость должна быть больше или равна 0!")
+            return
+        if price_client == 0:
+            # Если 0, используем ту же цену, что и для исполнителя
+            data = await state.get_data()
+            price_client = data.get('price_per_person', 0)
+        await state.update_data(price_for_client=price_client)
+    except ValueError:
+        await message.answer("❌ Введите число! Пример: 4000")
         return
     
     await message.answer(
@@ -1920,7 +1966,8 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
         address=data['address'],
         username_for_contact=None,
         status='active',
-        price_per_person=data['price_per_person']
+        price_per_person=data['price_per_person'],
+        price_for_client=data.get('price_for_client', data['price_per_person'])
     )
     db.add(new_order)
     await db.commit()
@@ -2115,8 +2162,14 @@ async def publish_post_from_order(callback: CallbackQuery, db: AsyncSession, bot
         order.posted_at = datetime.now()
         await db.commit()
         
+        try:
+            await callback.message.delete()
+        except:
+            pass
+
         await callback.message.answer(
             f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>",
+            reply_markup=get_main_menu("admin"),
             parse_mode="HTML"
         )
         
