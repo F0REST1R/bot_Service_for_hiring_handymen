@@ -1712,52 +1712,185 @@ async def edit_client_price(callback: CallbackQuery, state: FSMContext):
 # ==================== Создание постов ======================== 
 @router.message(F.text == "📝 Создать пост")
 async def create_post_start(message: Message, state: FSMContext, db: AsyncSession):
-    """Создание поста - сначала создаём заявку"""
     if not await is_admin(message.from_user.id, db):
-        await message.answer("⛔ У вас нет доступа к этой функции")
+        await message.answer("⛔ Нет доступа")
         return
-    
-    # Создаём новую заявку-заготовку
-    new_order = Order(
-        customer_id=None,
-        city_id=None,
-        full_name="Администратор",
-        contact_phone="",
-        workers_count=0,
-        work_description="",
-        start_datetime=datetime.now(),
-        estimated_hours=0,
-        address="",
-        username_for_contact=None,
-        status='draft'  # Черновик
-    )
-    db.add(new_order)
-    await db.commit()
-    await db.refresh(new_order)
-    
-    await state.update_data(order_id=new_order.id)
-    
-    # Запрашиваем город
+
+    # выбираем город
     result = await db.execute(select(City).where(City.is_active == True, City.channel_id.isnot(None)))
     cities = result.scalars().all()
-    
+
     if not cities:
-        await message.answer("❌ Нет доступных городов с привязанными каналами!")
-        await db.delete(new_order)
-        await db.commit()
+        await message.answer("❌ Нет городов с каналами")
         return
-    
-    keyboard = []
-    for city in cities:
-        keyboard.append([InlineKeyboardButton(text=f"🏙️ {city.name}", callback_data=f"create_post_city_{city.id}")])
-    
+
+    keyboard = [
+        [InlineKeyboardButton(text=city.name, callback_data=f"admin_city_{city.id}")]
+        for city in cities
+    ]
+
     await message.answer(
-        "📝 <b>Создание поста</b>\n\nСначала выберите город:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
-        parse_mode="HTML"
+        "🏙️ Выберите город:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
+
     await state.set_state(PostStates.choosing_city)
 
+@router.callback_query(PostStates.choosing_city, lambda c: c.data.startswith("admin_city_"))
+async def admin_city_selected(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
+    city_id = int(callback.data.split("_")[2])
+
+    result = await db.execute(select(City).where(City.id == city_id))
+    city = result.scalar_one()
+
+    await state.update_data(
+        city_id=city.id,
+        city_name=city.name,
+        channel_id=city.channel_id
+    )
+
+    await callback.message.answer("👥 Введите количество человек:")
+    await state.set_state(PostStates.editing_workers_count)
+    await callback.answer()
+
+@router.message(PostStates.editing_workers_count)
+async def admin_workers(message: Message, state: FSMContext):
+    try:
+        workers = int(message.text)
+        if workers <= 0:
+            raise ValueError
+    except:
+        await message.answer("❌ Введите число")
+        return
+
+    await state.update_data(workers_count=workers)
+
+    await message.answer(
+        "📅 Введите дату и время (ДД.ММ.ГГГГ ЧЧ:ММ)"
+    )
+    await state.set_state(PostStates.editing_date)
+
+@router.message(PostStates.editing_date)
+async def admin_date(message: Message, state: FSMContext):
+    dt = parse_datetime_moscow(message.text)
+
+    if not dt:
+        await message.answer("❌ Неверный формат")
+        return
+
+    await state.update_data(
+        start_datetime_str=dt.isoformat(),
+        start_datetime_text=message.text
+    )
+
+    await message.answer("⏱️ Введите длительность (часы):")
+    await state.set_state(PostStates.editing_duration)
+
+@router.message(PostStates.editing_duration)
+async def admin_duration(message: Message, state: FSMContext):
+    try:
+        hours = float(message.text.replace(",", "."))
+        if hours <= 0:
+            raise ValueError
+    except:
+        await message.answer("❌ Введите число")
+        return
+
+    await state.update_data(estimated_hours=hours)
+
+    await message.answer("📍 Введите адрес:")
+    await state.set_state(PostStates.editing_address)
+
+@router.message(PostStates.editing_address)
+async def admin_address(message: Message, state: FSMContext):
+    await state.update_data(address=message.text)
+
+    await message.answer("📝 Введите описание:")
+    await state.set_state(PostStates.editing_description)
+
+@router.message(PostStates.editing_description)
+async def admin_description(message: Message, state: FSMContext):
+    await state.update_data(work_description=message.text)
+
+    await message.answer("💰 Оплата исполнителю:")
+    await state.set_state(PostStates.entering_price)
+
+@router.message(PostStates.entering_price)
+async def admin_price_worker(message: Message, state: FSMContext):
+    try:
+        price = int(message.text)
+        if price <= 0:
+            raise ValueError
+    except:
+        await message.answer("❌ Введите число")
+        return
+
+    await state.update_data(price_per_person=price)
+
+    await message.answer("💰 Цена для клиента:")
+    await state.set_state(PostStates.entering_price_client)
+
+@router.message(PostStates.entering_price_client)
+async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bot):
+    try:
+        price_client = int(message.text)
+        if price_client <= 0:
+            raise ValueError
+    except:
+        await message.answer("❌ Введите число")
+        return
+
+    data = await state.get_data()
+
+    start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+
+    order = Order(
+        customer_id=None,
+        city_id=data['city_id'],
+        full_name="Администратор",
+        contact_phone="",
+        workers_count=data['workers_count'],
+        work_description=data['work_description'],
+        start_datetime=start_datetime,
+        estimated_hours=data['estimated_hours'],
+        address=data['address'],
+        status='active',
+        price_per_person=data['price_per_person'],
+        price_for_client=price_client
+    )
+
+    db.add(order)
+    await db.commit()
+    await db.refresh(order)
+
+    # пост
+    post_text = f"""
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
+
+📅 {format_datetime_moscow(order.start_datetime)}
+📍 {order.address}
+👥 {order.workers_count} чел.
+⏱️ {order.estimated_hours} ч.
+
+📝 {order.work_description}
+
+💰 {order.price_per_person} ₽
+"""
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order.id}")]
+    ])
+
+    await bot.send_message(
+        chat_id=data['channel_id'],
+        text=post_text,
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+    await message.answer("✅ Пост создан и опубликован")
+    await state.clear()
+    
 @router.callback_query(PostStates.choosing_city, lambda c: c.data.startswith("create_post_city_"))
 async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     """Выбор города - продолжаем заполнение"""
@@ -1793,24 +1926,17 @@ async def create_post_price(message: Message, state: FSMContext):
             await message.answer("❌ Стоимость должна быть больше 0!")
             return
         await state.update_data(price_per_person=price)
-        await state.update_data(current_price=price)  # Сохраняем в оба поля
     except ValueError:
         await message.answer("❌ Введите число! Пример: 2500")
         return
     
-    # Запрашиваем цену для клиента
+    # Переходим к количеству человек (не к цене клиента)
     await message.answer(
-        "💰 <b>Введите стоимость ДЛЯ КЛИЕНТА</b> (руб./чел.)\n\n"
-        "Сколько клиент заплатит за эту работу?\n"
-        "Пример: 4000\n\n"
-        "Или отправьте '0' если цена такая же",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="❌ Отмена")]],
-            resize_keyboard=True
-        )
+        "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
     )
-    await state.set_state(PostStates.entering_price_client)
-
+    await state.set_state(PostStates.editing_workers_count)
 
 @router.message(PostStates.entering_price_client)
 async def create_post_price_client(message: Message, state: FSMContext):
