@@ -1311,9 +1311,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
             f"ID сообщения: {sent_message.message_id}",
             parse_mode="HTML"
         )
-        
-        # Обновляем детали заявки
-        await show_order_details(callback.message, db)
+
         
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка при публикации: {str(e)}")
@@ -1378,8 +1376,7 @@ async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
         
         await callback.message.answer(f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>", parse_mode="HTML")
         
-        # Обновляем детали заявки
-        await show_order_details(callback.message, db)
+
         
     except Exception as e:
         await callback.message.answer(f"❌ Ошибка при публикации: {str(e)}")
