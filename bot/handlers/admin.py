@@ -1863,6 +1863,31 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
     await db.commit()
     await db.refresh(order)
 
+    google_client = bot.get("google_client")
+
+    if google_client:
+        from bot.utils.time_utils import format_datetime_moscow
+
+        order_data_for_sheet = {
+            'order_id': order.id,
+            'created_at': format_datetime_moscow(order.created_at),
+            'city': data.get('city_name'),
+            'customer_name': order.full_name,
+            'customer_phone': order.contact_phone,
+            'workers_count': order.workers_count,
+            'start_datetime': format_datetime_moscow(order.start_datetime),
+            'estimated_hours': order.estimated_hours,
+            'address': order.address,
+            'work_description': order.work_description,
+            'price_per_person': order.price_per_person,
+            'price_for_client': order.price_for_client,
+            'post_status': 'Опубликован',
+            'recruitment_status': 'Набор открыт',
+            'responses_count': 0
+        }
+
+        google_client.save_order(order_data_for_sheet)
+
     # пост
     post_text = f"""
 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
