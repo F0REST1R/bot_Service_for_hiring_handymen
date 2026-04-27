@@ -94,59 +94,6 @@ class GoogleSheetsClient:
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения заявки в Google Sheets: {e}")
     
-    def update_financial_stats(self):
-        """Обновление финансовой статистики в отдельном листе"""
-        try:
-            orders_sheet = self.sheet.worksheet("Заявки")
-            finance_sheet = self.sheet.worksheet("Финансы")
-            
-            # Получаем все заявки кроме заголовка
-            all_orders = orders_sheet.get_all_values()
-            if len(all_orders) <= 1:
-                return
-            
-            # Очищаем старые финансовые данные (кроме заголовка)
-            finance_sheet.resize(rows=1)
-            
-            total_revenue = 0
-            total_expenses = 0
-            
-            # Перебираем заявки и считаем финансы
-            for i, order in enumerate(all_orders[1:], start=2):
-                order_id = order[0]
-                price_per_person = float(order[10]) if order[10] and order[10] != '' else 0
-                workers_count = int(order[5]) if order[5] and order[5] != '' else 0
-                
-                # Общая выручка от этой заявки (допустим, заказчик платит по ставке)
-                revenue = price_per_person * workers_count
-                total_revenue += revenue
-                
-                # Расходы на персонал (зарплата рабочим)
-                # Допустим, рабочие получают 80% от оплаты
-                expenses = revenue * 0.8
-                total_expenses += expenses
-                
-                # Очистка для демонстрации
-                # Реальную сумму перевода нужно будет получать из другого источника
-            
-            # Чистая прибыль
-            net_profit = total_revenue - total_expenses
-            
-            # Добавляем финансовый отчёт
-            report_data = [
-                ["Финансовый отчёт", datetime.now().strftime('%d.%m.%Y %H:%M')],
-                ["Общая выручка", f"{total_revenue:,.2f} руб."],
-                ["Расходы на персонал", f"{total_expenses:,.2f} руб."],
-                ["Чистая прибыль", f"{net_profit:,.2f} руб."]
-            ]
-            
-            for row in report_data:
-                finance_sheet.append_row(row, value_input_option="USER_ENTERED")
-            
-            logger.info(f"✅ Финансовая статистика обновлена: Прибыль {net_profit:,.2f} руб.")
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка обновления финансовой статистики: {e}")
     
     def update_order_status(self, order_id: int, status_field: str, new_value: str):
         """Обновление статуса заявки в таблице"""
