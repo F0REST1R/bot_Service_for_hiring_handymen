@@ -48,7 +48,7 @@ class GoogleSheetsClient:
                     "ID заявки", "Дата создания", "Город", "Заказчик",
                     "Телефон", "Количество человек", "Дата начала работ",
                     "Продолжительность (ч)", "Адрес", "Описание работ",
-                    "Оплата (руб./чел.)", "Статус поста", "Статус набора",
+                    "Оплата (руб./чел.)", "Цена для клиента", "Статус поста", "Статус набора",
                     "Количество откликов", "Общий доход", "Расходы на персонал",
                     "Чистая прибыль"
                 ]
@@ -94,6 +94,7 @@ class GoogleSheetsClient:
                 order_data.get('address', ''),
                 order_data.get('work_description', ''),
                 order_data.get('price_per_person', 0),
+                order_data.get('price_for_client', 0),
                 order_data.get('post_status', 'Опубликован'),
                 order_data.get('recruitment_status', 'Набор открыт'),
                 order_data.get('responses_count', 0),

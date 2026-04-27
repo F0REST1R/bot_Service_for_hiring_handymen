@@ -104,6 +104,21 @@ async def process_worker_age(message: Message, state: FSMContext):
         await message.answer("❌ Пожалуйста, введите число (возраст):")
         return
     
+    age = int(message.text)
+
+    if age < 16:
+        await message.answer(
+            "❌ Извините, мы принимаем заявки только от исполнителей старше 16 лет.\n\n"
+            "Пожалуйста, введите ваш возраст:"
+        )
+        return
+    
+    if age > 100:
+        await message.answer(
+            "❌ Пожалуйста, введите корректный возраст (не более 100 лет):"
+        )
+        return
+    
     await state.update_data(age=int(message.text))
     await message.answer("🌍 Введите ваше гражданство:", reply_markup=get_cancel_keyboard())
     await state.set_state(RegistrationStates.worker_citizenship)

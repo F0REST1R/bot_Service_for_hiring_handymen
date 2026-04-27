@@ -1034,7 +1034,8 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
     
     # Запрашиваем цену (без кнопок, только поле ввода)
     await callback.message.answer(
-        f"💰 <b>Введите оплату для заявки #{order_id}</b> (руб./чел.)\n\n"
+        f"💰 <b>Введите оплату для ИСПОЛНИТЕЛЯ #{order_id}</b> (руб./чел.)\n\n",
+        f"Сколько получит рабочий за эту работу?\n"
         f"Пример: 2500\n\n"
         f"Город: {city.name}\n"
         f"Адрес: {order.address}\n"
@@ -1050,7 +1051,7 @@ async def admin_create_post_from_order(callback: CallbackQuery, state: FSMContex
 
 @router.message(PostStates.entering_price_order)
 async def process_post_price_input(message: Message, state: FSMContext):
-    """Обработка ввода цены для поста из заявки"""
+    """Обработка ввода цены для исполнителя"""
     if message.text == "❌ Отмена":
         await cancel_create_post(message, state)
         return
@@ -1064,20 +1065,54 @@ async def process_post_price_input(message: Message, state: FSMContext):
         await message.answer("❌ Введите число! Пример: 2500")
         return
     
-    # Сохраняем цену
-    await state.update_data(current_price=price)
+    # Сохраняем цену для исполнителя
+    await state.update_data(price_per_person=price)
+    
+    # Запрашиваем цену для клиента
     data = await state.get_data()
     
-    # Показываем предпросмотр и кнопки действий
+    await message.answer(
+        f"💰 <b>Введите стоимость ДЛЯ КЛИЕНТА</b> (руб./чел.)\n\n"
+        f"Сколько клиент заплатит за эту работу?\n"
+        f"Пример: 4000\n\n"
+        f"Город: {data.get('city_name', 'Не выбран')}",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="❌ Отмена")]],
+            resize_keyboard=True
+        )
+    )
+    await state.set_state(PostStates.entering_price_client)
+
+@router.message(PostStates.entering_price_client)
+async def process_post_price_client(message: Message, state: FSMContext):
+    """Обработка ввода цены для клиента"""
+    if message.text == "❌ Отмена":
+        await cancel_create_post(message, state)
+        return
+    
+    try:
+        price_client = int(message.text)
+        if price_client <= 0:
+            await message.answer("❌ Стоимость должна быть больше 0! Введите заново:")
+            return
+    except ValueError:
+        await message.answer("❌ Введите число! Пример: 4000")
+        return
+    
+    # Сохраняем цену для клиента
+    await state.update_data(price_for_client=price_client)
+    data = await state.get_data()
+    
+    # Показываем предпросмотр с обеими ценами
     post_text = f"""
 🏗️ <b>ПРЕДПРОСМОТР ПОСТА</b>
 
 📋 <b>Заявка #{data['order_id']}</b>
-📍 <b>Адрес:</b> {data['address']}
-👥 <b>Требуется:</b> {data['workers_count']} чел.
-⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
-📝 <b>Описание:</b> {data['work_description']}
-💰 <b>Оплата:</b> {price} руб./чел.
+📍 <b>Адрес:</b> {data.get('address', 'не указан')}
+👥 <b>Требуется:</b> {data.get('workers_count', 'не указано')} чел.
+⏱️ <b>Продолжительность:</b> {data.get('estimated_hours', 0)} ч.
+📝 <b>Описание:</b> {data.get('work_description', 'не указано')}
+💰 <b>Оплата:</b> {data.get('price_per_person', 0)} руб./чел.
 """
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1151,13 +1186,13 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
         await callback.answer()
         return
     
-    # Если нет цены в состоянии - запрашиваем
+    # Если нет цены исполнителя в состоянии - запрашиваем
     current_price = data.get('current_price')
     if not current_price and order.price_per_person:
         current_price = order.price_per_person
     elif not current_price:
         await callback.message.answer(
-            f"💰 <b>Введите оплату для заявки #{order_id}</b> (руб./чел.)\n\n"
+            f"💰 <b>Введите оплату ДЛЯ ИСПОЛНИТЕЛЯ</b> (руб./чел.)\n\n"
             f"Пример: 2500\n\n"
             f"Город: {city.name}\n"
             f"Адрес: {order.address}\n"
@@ -1171,8 +1206,26 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
         await callback.answer()
         return
     
-    # Обновляем цену в заявке
+    # Если нет цены для клиента в состоянии - запрашиваем
+    price_for_client = data.get('price_for_client')
+    if not price_for_client:
+        await callback.message.answer(
+            f"💰 <b>Введите стоимость ДЛЯ КЛИЕНТА</b> (руб./чел.)\n\n"
+            f"Сколько клиент заплатит за эту работу?\n"
+            f"Пример: 4000\n\n"
+            f"Город: {city.name}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_create_post")]
+            ]),
+            parse_mode="HTML"
+        )
+        await state.set_state(PostStates.entering_price_client)
+        await callback.answer()
+        return
+    
+    # Обновляем цены в заявке
     order.price_per_person = current_price
+    order.price_for_client = price_for_client
     
     # Обновляем другие поля, если они есть в состоянии
     if data.get('workers_count'):
@@ -1186,6 +1239,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     if data.get('start_datetime_str'):
         order.start_datetime = datetime.fromisoformat(data['start_datetime_str'])
     
+    order.status = 'active'
     await db.commit()
     
     # Формируем пост
@@ -1226,7 +1280,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
         order.posted_at = datetime.now()
         await db.commit()
         
-        # Сохраняем в Google Sheets
+        # Сохраняем в Google Sheets с обеими ценами
         if google_client:
             order_data_for_sheet = {
                 'order_id': order.id,
@@ -1240,6 +1294,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
                 'address': order.address,
                 'work_description': order.work_description,
                 'price_per_person': order.price_per_person if order.price_per_person else 0,
+                'price_for_client': order.price_for_client if order.price_for_client else 0,  # Добавлено
                 'post_status': 'Опубликован',
                 'recruitment_status': 'Набор открыт',
                 'responses_count': 0
@@ -1260,7 +1315,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     
     await state.clear()
     await callback.answer()
-
+    
 @router.callback_query(lambda c: c.data.startswith("publish_post_"))
 async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
     """Непосредственная публикация поста"""

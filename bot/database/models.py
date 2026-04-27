@@ -92,6 +92,7 @@ class Order(Base):
     channel_post_id = Column(Integer, nullable=True)
     posted_at = Column(DateTime, nullable=True)
     price_per_person = Column(Integer, nullable=True)
+    price_for_client = Column(Integer, nullable=True)
     reminder_sent = Column(Boolean, default=False)
     
     # Связи
