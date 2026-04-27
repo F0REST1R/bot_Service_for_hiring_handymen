@@ -45,6 +45,7 @@ class PostStates(StatesGroup):
     entering_price = State() 
     entering_price_order = State() 
     entering_price_client = State()
+    entering_price_client_admin = State()
     editing_workers_count = State()
     editing_post = State()
     editing_date = State()
