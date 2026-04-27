@@ -1831,7 +1831,7 @@ async def admin_price_worker(message: Message, state: FSMContext):
     await state.set_state(PostStates.entering_price_client_admin)
 
 @router.message(PostStates.entering_price_client_admin)
-async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bot):
+async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bot, google_client = None):
     try:
         price_client = int(message.text)
         if price_client <= 0:
@@ -1863,7 +1863,8 @@ async def admin_finish(message: Message, state: FSMContext, db: AsyncSession, bo
     await db.commit()
     await db.refresh(order)
 
-    google_client = bot.get("google_client")
+    if "google_client" in bot:
+        google_client = bot["google_client"]
 
     if google_client:
         from bot.utils.time_utils import format_datetime_moscow
