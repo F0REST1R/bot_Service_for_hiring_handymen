@@ -168,3 +168,26 @@ async def back_to_main_menu(message: Message, state: FSMContext, db: AsyncSessio
         await message.answer(
             "👋 Нажмите /start для начала работы"
         )
+        
+@router.callback_query(lambda c: c.data == "switch_role")
+async def switch_role(callback: CallbackQuery, db: AsyncSession):
+    result = await db.execute(
+        select(User).where(User.telegram_id == callback.from_user.id)
+    )
+    user = result.scalar_one()
+
+    # переключение роли
+    if user.role == "worker":
+        user.role = "customer"
+        new_role = "Заказчик"
+    else:
+        user.role = "worker"
+        new_role = "Исполнитель"
+
+    await db.commit()
+
+    await callback.message.answer(
+        f"🔄 Роль изменена на: <b>{new_role}</b>",
+        parse_mode="HTML"
+    )
+    await callback.answer()

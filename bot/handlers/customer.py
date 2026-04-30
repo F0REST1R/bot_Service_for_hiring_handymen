@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -345,12 +345,12 @@ async def show_my_orders(message: Message, db: AsyncSession):
     
     # Получаем все заявки заказчика
     result = await db.execute(
-        select(Order, City)
-        .join(City, Order.city_id == City.id)
-        .where(Order.customer_id == customer.id)
-        .order_by(Order.created_at.desc())
+        select(Order)
+        .where(Order.customer_id == message.from_user.id)
+        .order_by(Order.created_at.desc())  # новые сверху
+        .limit(3)
     )
-    orders = result.all()
+    orders = result.scalars().all()
     
     if not orders:
         await message.answer("📭 У вас пока нет созданных заявок")
@@ -385,4 +385,33 @@ async def show_my_orders(message: Message, db: AsyncSession):
         text += f"👥 Откликнулось: {assignments_count} чел.\n"
         text += f"---\n\n"
     
-    await message.answer(text, parse_mode="HTML")
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📂 Все заявки", callback_data="all_orders")]
+    ])
+    
+    await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+
+@router.callback_query(lambda c: c.data == "all_orders")
+async def show_all_orders(callback: CallbackQuery, db: AsyncSession):
+    result = await db.execute(
+        select(Order)
+        .where(Order.customer_id == callback.from_user.id)
+        .order_by(Order.created_at.desc())
+    )
+    orders = result.scalars().all()
+
+    if not orders:
+        await callback.message.answer("📭 У вас нет заявок")
+        return
+
+    text = "📂 <b>Все ваши заявки:</b>\n\n"
+
+    for order in orders:
+        text += f"🆔 #{order.id}\n"
+        text += f"📍 {order.address}\n"
+        text += f"👥 {order.workers_count} чел.\n"
+        text += f"📅 {order.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+        text += "------\n"
+
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer()
