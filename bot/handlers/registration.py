@@ -138,15 +138,17 @@ async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSes
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
-    
+
     data = await state.update_data(phone=message.text)
-    
+
+    # 🔥 1. Проверяем существует ли пользователь
     result = await db.execute(
         select(User).where(User.telegram_id == message.from_user.id)
     )
     user = result.scalar_one_or_none()
 
     if not user:
+        # создаём если нет
         user = User(
             telegram_id=message.from_user.id,
             username=message.from_user.username,
@@ -156,43 +158,59 @@ async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSes
         db.add(user)
         await db.flush()
     else:
-        # обновляем роль если переключились
+        # если есть — просто обновляем
         user.role = 'worker'
         user.is_registered = True
         await db.flush()
-    
-    new_worker = Worker(
-        user_id=new_user.id,
-        full_name=data['full_name'],
-        age=data['age'],
-        citizenship=data['citizenship'],
-        phone=data['phone']
+
+    # 🔥 2. Проверяем есть ли уже Worker (чтобы не дублировать)
+    result = await db.execute(
+        select(Worker).where(Worker.user_id == user.id)
     )
-    db.add(new_worker)
+    existing_worker = result.scalar_one_or_none()
+
+    if existing_worker:
+        worker = existing_worker
+        # можно обновить данные если хочешь
+        worker.full_name = data['full_name']
+        worker.age = data['age']
+        worker.citizenship = data['citizenship']
+        worker.phone = data['phone']
+    else:
+        worker = Worker(
+            user_id=user.id,
+            full_name=data['full_name'],
+            age=data['age'],
+            citizenship=data['citizenship'],
+            phone=data['phone']
+        )
+        db.add(worker)
+
     await db.commit()
-    
+
+    # 🔥 3. Города (оставил как у тебя)
     result = await db.execute(select(City).where(City.is_active == True))
     cities = result.scalars().all()
-    
+
     if not cities:
         default_cities = ["Мытищи", "Королёв", "Пушкино"]
         for city_name in default_cities:
-            new_city = City(name=city_name, is_active=True)
-            db.add(new_city)
+            db.add(City(name=city_name, is_active=True))
         await db.commit()
-        
+
         result = await db.execute(select(City).where(City.is_active == True))
         cities = result.scalars().all()
-    
+
     city_buttons = [[KeyboardButton(text=city.name)] for city in cities]
     city_buttons.append([KeyboardButton(text="✅ Завершить выбор")])
-    
+
     await message.answer(
-        "🏙️ Выберите города, в которых вы готовы работать (можно выбрать несколько):\nПосле выбора нажмите 'Завершить выбор'",
+        "🏙️ Выберите города, в которых вы готовы работать (можно выбрать несколько):\n"
+        "После выбора нажмите 'Завершить выбор'",
         reply_markup=ReplyKeyboardMarkup(keyboard=city_buttons, resize_keyboard=True)
     )
-    
-    await state.update_data(worker_id=new_worker.id)
+
+    await state.update_data(worker_id=worker.id)
     await state.set_state(RegistrationStates.worker_cities)
 
 @router.message(RegistrationStates.worker_cities)
@@ -255,25 +273,14 @@ async def process_customer_phone(message: Message, state: FSMContext, db: AsyncS
     
     data = await state.update_data(phone=message.text)
     
-    result = await db.execute(
-        select(User).where(User.telegram_id == message.from_user.id)
+    new_user = User(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        role='customer',
+        is_registered=True
     )
-    user = result.scalar_one_or_none()
-
-    if not user:
-        user = User(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-            role='worker',
-            is_registered=True
-        )
-        db.add(user)
-        await db.flush()
-    else:
-        # обновляем роль если переключились
-        user.role = 'worker'
-        user.is_registered = True
-        await db.flush()
+    db.add(new_user)
+    await db.flush()
     
     new_customer = Customer(
         user_id=new_user.id,
