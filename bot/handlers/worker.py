@@ -54,7 +54,7 @@ async def select_cities(message: Message, db: AsyncSession, state: FSMContext):
     
     # Сохраняем в состояние список выбранных городов
     await state.set_state(WorkerStates.selecting_cities)
-    await WorkerStates.worker_id.set(worker.id)
+    await state.update_data(worker_id=worker.id)
 
 @router.message(WorkerStates.selecting_cities, F.text.startswith(("✅ ", "⬜ ")))
 async def toggle_city_selection(message: Message, state: FSMContext, db: AsyncSession):
