@@ -12,6 +12,7 @@ from bot.config import settings
 from bot.utils.time_utils import parse_datetime_moscow
 from bot.keyboards.reply import get_main_menu, get_cancel_keyboard
 from datetime import timedelta
+from bot.handlers.cancel import cancel_create_post
 import pytz
 import re
 
@@ -329,7 +330,7 @@ async def show_order_assignments(message: Message, db: AsyncSession):
         text += f"   📅 Возраст: {worker.age}\n"
         text += f"   🌍 Гражданство: {worker.citizenship}\n"
         text += f"   👤 Telegram: @{user.username if user.username else 'нет username'}\n"
-        text += f"   📌 Отклик: {assignment.assigned_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+        text += f"   📌 Отклик: {format_datetime_moscow(assignment.assigned_at)}\n\n"
     
     await message.answer(text, parse_mode="HTML")
 
@@ -747,19 +748,6 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
         await message.answer(f"✅ Уведомление отправлено пользователям!")
     
     await state.clear()
-
-@router.callback_query(lambda c: c.data == "cancel_notification")
-async def cancel_notification(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
-    await callback.answer()
-    await state.clear()
-    await callback.message.answer("❌ Рассылка отменена")
-    
-    # Возвращаемся в главное меню админа
-    await callback.message.answer(
-        "👋 Главное меню:",
-        reply_markup=get_main_menu('admin')
-    )
-    await callback.answer()
 
 @router.message(F.text == "📊 Аналитика")
 async def show_analytics(message: Message, db: AsyncSession):
@@ -1934,58 +1922,6 @@ async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, 
     await state.set_state(PostStates.entering_price)
     await callback.answer()
 
-# @router.message(PostStates.entering_price)
-# async def create_post_price(message: Message, state: FSMContext):
-#     if message.text == "❌ Отмена":
-#         await cancel_create_post(message, state)
-#         return
-    
-#     try:
-#         price = int(message.text)
-#         if price <= 0:
-#             await message.answer("❌ Стоимость должна быть больше 0!")
-#             return
-#         await state.update_data(price_per_person=price)
-#     except ValueError:
-#         await message.answer("❌ Введите число! Пример: 2500")
-#         return
-    
-#     # Переходим к количеству человек (не к цене клиента)
-#     await message.answer(
-#         "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
-#         reply_markup=get_cancel_keyboard(),
-#         parse_mode="HTML"
-#     )
-#     await state.set_state(PostStates.editing_workers_count)
-
-# @router.message(PostStates.entering_price_client)
-# async def create_post_price_client(message: Message, state: FSMContext):
-#     """Ввод цены для клиента при создании поста"""
-#     if message.text == "❌ Отмена":
-#         await cancel_create_post(message, state)
-#         return
-    
-#     try:
-#         price_client = int(message.text)
-#         if price_client < 0:
-#             await message.answer("❌ Стоимость должна быть больше или равна 0!")
-#             return
-#         if price_client == 0:
-#             # Если 0, используем ту же цену, что и для исполнителя
-#             data = await state.get_data()
-#             price_client = data.get('price_per_person', 0)
-#         await state.update_data(price_for_client=price_client)
-#     except ValueError:
-#         await message.answer("❌ Введите число! Пример: 4000")
-#         return
-    
-#     await message.answer(
-#         "👥 <b>Введите количество требуемых человек</b>\nПример: 5",
-#         reply_markup=get_cancel_keyboard(),
-#         parse_mode="HTML"
-#     )
-#     await state.set_state(PostStates.editing_workers_count)
-
 @router.message(PostStates.editing_workers_count)
 async def create_post_workers_count(message: Message, state: FSMContext):
     if message.text == "❌ Отмена":
@@ -2198,13 +2134,6 @@ async def create_post_description(message: Message, state: FSMContext, db: Async
     
     await state.clear()
 
-async def cancel_create_post(message: Message, state: FSMContext):
-    """Отмена создания поста - возврат в меню администратора"""
-    await state.clear()
-    await message.answer(
-        "❌ Создание поста отменено",
-        reply_markup=get_main_menu('admin')
-    )
 
 @router.callback_query(lambda c: c.data == "cancel_create_post")
 async def cancel_create_post_callback(callback: CallbackQuery, state: FSMContext):
