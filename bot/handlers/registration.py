@@ -214,7 +214,7 @@ async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSes
     await state.set_state(RegistrationStates.worker_cities)
 
 @router.message(RegistrationStates.worker_cities)
-async def process_worker_cities(message: Message, state: FSMContext, db: AsyncSession):
+async def process_worker_cities(message: Message, state: FSMContext, db: AsyncSession, google_client = None):
     """Обработка выбора городов исполнителем"""
     if message.text == "✅ Завершить выбор":
         data = await state.get_data()
@@ -241,6 +241,16 @@ async def process_worker_cities(message: Message, state: FSMContext, db: AsyncSe
             "✅ Регистрация завершена!",
             reply_markup=get_main_menu('worker')
         )
+        
+        result = await db.execute(select(Worker).where(Worker.id == worker_id))
+        worker = result.scalar_one()
+
+        result = await db.execute(select(User).where(User.id == worker.user_id))
+        user = result.scalar_one()
+
+        if google_client:
+            google_client.save_worker(user, worker, selected_cities)
+
         await state.clear()
         return
     
