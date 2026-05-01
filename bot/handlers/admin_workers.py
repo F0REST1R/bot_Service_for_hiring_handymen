@@ -78,7 +78,7 @@ async def comment_worker_start(callback: CallbackQuery, state: FSMContext):
 
 # ================= ОБРАБОТКА ID =================
 @router.message(AdminWorkerStates.entering_id)
-async def process_worker_id(message: Message, state: FSMContext, db: AsyncSession):
+async def process_worker_id(message: Message, state: FSMContext, db: AsyncSession, google_client = None):
     try:
         user_id = int(message.text)
     except:
@@ -98,7 +98,6 @@ async def process_worker_id(message: Message, state: FSMContext, db: AsyncSessio
     if action == "block":
         user.is_blocked = True
         await db.commit()
-        google_client = message.bot.get("google_client")
         if google_client:
             google_client.update_worker_status(user.id, True)
         await message.answer("🚫 Пользователь заблокирован")
@@ -108,7 +107,6 @@ async def process_worker_id(message: Message, state: FSMContext, db: AsyncSessio
     if action == "unblock":
         user.is_blocked = False
         await db.commit()
-        google_client = message.bot.get("google_client")
         if google_client:
             google_client.update_worker_status(user.id, False)
         await message.answer("✅ Пользователь разблокирован")
@@ -123,7 +121,7 @@ async def process_worker_id(message: Message, state: FSMContext, db: AsyncSessio
 
 # ================= ОБРАБОТКА СООБЩЕНИЯ =================
 @router.message(AdminWorkerStates.entering_message)
-async def process_worker_message(message: Message, state: FSMContext, db: AsyncSession):
+async def process_worker_message(message: Message, state: FSMContext, db: AsyncSession, google_client = None):
     data = await state.get_data()
     user_id = data.get("target_user_id")
     action = data.get("action")
@@ -143,8 +141,6 @@ async def process_worker_message(message: Message, state: FSMContext, db: AsyncS
         await message.answer("✅ Предупреждение отправлено")
 
     elif action == "comment":
-        google_client = message.bot.get("google_client")
-
         if google_client:
             google_client.add_worker_comment(user_id, message.text)
 

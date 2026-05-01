@@ -874,7 +874,7 @@ async def apply_for_order(callback: CallbackQuery, db: AsyncSession, google_clie
             await callback.bot.send_message(
                 admin_id,
                 f"✅ <b>НОВЫЙ ОТКЛИК!</b>\n\n"
-                f"👤 Исполнитель: {worker.full_name}\n"
+                f"👤 Исполнитель: {worker.full_name} {worker.id}\n"
                 f"📞 Телефон: {worker.phone}\n"
                 f"📅 Возраст: {worker.age}\n"
                 f"🌍 Гражданство: {worker.citizenship}\n"

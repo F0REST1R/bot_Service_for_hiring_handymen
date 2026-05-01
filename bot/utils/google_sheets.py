@@ -242,3 +242,31 @@ class GoogleSheetsClient:
 
                 sheet.update_cell(i, 11, new_comment)
                 return
+    
+    def update_financial_stats(self):
+        try:
+            orders_sheet = self.sheet.worksheet("Заявки")
+            
+            all_orders = orders_sheet.get_all_values()
+            if len(all_orders) <= 1:
+                return
+
+            total_revenue = 0
+            total_expenses = 0
+
+            for order in all_orders[1:]:
+                price_per_person = float(order[10]) if order[10] else 0
+                workers_count = int(order[5]) if order[5] else 0
+
+                revenue = price_per_person * workers_count
+                expenses = revenue * 0.8
+
+                total_revenue += revenue
+                total_expenses += expenses
+
+            net_profit = total_revenue - total_expenses
+
+            logger.info(f"💰 Финансы обновлены: {net_profit}")
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка финансов: {e}")
