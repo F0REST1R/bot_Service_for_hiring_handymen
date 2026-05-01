@@ -28,6 +28,7 @@ class GoogleSheetsClient:
             self.client = gspread.authorize(creds)
             self.sheet = self.client.open_by_key(self.spreadsheet_id)
             logger.info("✅ Успешное подключение к Google Sheets")
+            print(self.sheet.url)
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к Google Sheets: {e}")
             raise
@@ -81,39 +82,54 @@ class GoogleSheetsClient:
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации листов: {e}")
     
-    def save_order(self, order_data: dict):
-        """
-        Сохранение информации о заявке в Google Sheets
-        Вызывается при публикации поста
-        """
-        try:
-            orders_sheet = self.sheet.worksheet("Заявки")
-            
-            # Формируем строку данных
-            row = [
-                order_data.get('order_id', ''),
-                order_data.get('created_at', datetime.now().strftime('%d.%m.%Y %H:%M')),
-                order_data.get('city', ''),
-                order_data.get('customer_name', ''),
-                order_data.get('customer_phone', ''),
-                order_data.get('workers_count', 0),
-                order_data.get('start_datetime', ''),
-                order_data.get('estimated_hours', 0),
-                order_data.get('address', ''),
-                order_data.get('work_description', ''),
-                order_data.get('price_per_person', 0),
-                order_data.get('price_for_client', 0),
-                order_data.get('post_status', 'Опубликован'),
-                order_data.get('recruitment_status'),
-                order_data.get('responses_count', 0)
-            ]
-            
-            orders_sheet.append_row(row, value_input_option="USER_ENTERED")
-            logger.info(f"✅ Заявка #{order_data.get('order_id')} сохранена в Google Sheets")
-            
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка сохранения заявки в Google Sheets: {e}")
+def save_order(self, order_data: dict):
+    """
+    Сохранение информации о заявке в Google Sheets
+    Вызывается при публикации поста
+    """
+    try:
+        orders_sheet = self.sheet.worksheet("Заявки")
+        
+        # Формируем строку данных
+        row = [
+            order_data.get('order_id', ''),
+            order_data.get('created_at', datetime.now().strftime('%d.%m.%Y %H:%M')),
+            order_data.get('city', ''),
+            order_data.get('customer_name', ''),
+            order_data.get('customer_phone', ''),
+            order_data.get('workers_count', 0),
+            order_data.get('start_datetime', ''),
+            order_data.get('estimated_hours', 0),   # H
+            order_data.get('address', ''),
+            order_data.get('work_description', ''),# J
+            order_data.get('price_per_person', 0),
+            order_data.get('price_for_client', 0), # I
+            order_data.get('post_status', 'Опубликован'),
+            order_data.get('recruitment_status', 'Набор открыт'),
+            order_data.get('responses_count', 0)
+        ]
+        
+        # Добавляем строку
+        orders_sheet.append_row(row, value_input_option="USER_ENTERED")
+
+        # 🔥 Получаем номер последней строки
+        last_row = len(orders_sheet.get_all_values())
+
+        # 🔥 Формулы
+        # K = расходы (H * J)
+        expense_formula = f"=H{last_row}*J{last_row}"
+        
+        # L = чистая прибыль (I * K)
+        profit_formula = f"=I{last_row}*K{last_row}"
+
+        # 🔥 Записываем формулы
+        orders_sheet.update_cell(last_row, 11, expense_formula)  # колонка K
+        orders_sheet.update_cell(last_row, 12, profit_formula)   # колонка L
+
+        logger.info(f"✅ Заявка #{order_data.get('order_id')} + формулы добавлены")
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения заявки в Google Sheets: {e}")
     
     
     def update_order_status(self, order_id: int, status_field: str, new_value: str):
