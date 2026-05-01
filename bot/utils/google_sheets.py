@@ -111,8 +111,6 @@ class GoogleSheetsClient:
             orders_sheet.append_row(row, value_input_option="USER_ENTERED")
             logger.info(f"✅ Заявка #{order_data.get('order_id')} сохранена в Google Sheets")
             
-            # Обновляем финансовую статистику
-            self.update_financial_stats()
             
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения заявки в Google Sheets: {e}")
@@ -262,30 +260,3 @@ class GoogleSheetsClient:
 
         print(f"❌ Worker {user_id} не найден в таблице")
     
-    def update_financial_stats(self):
-        try:
-            orders_sheet = self.sheet.worksheet("Заявки")
-            
-            all_orders = orders_sheet.get_all_values()
-            if len(all_orders) <= 1:
-                return
-
-            total_revenue = 0
-            total_expenses = 0
-
-            for order in all_orders[1:]:
-                price_per_person = float(order[10]) if order[10] else 0
-                workers_count = int(order[5]) if order[5] else 0
-
-                revenue = price_per_person * workers_count
-                expenses = revenue * 0.8
-
-                total_revenue += revenue
-                total_expenses += expenses
-
-            net_profit = total_revenue - total_expenses
-
-            logger.info(f"💰 Финансы обновлены: {net_profit}")
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка финансов: {e}")
