@@ -25,7 +25,7 @@ async def universal_cancel(message: Message, state: FSMContext, db: AsyncSession
     await state.clear()
     await message.answer("❌ Действие отменено", reply_markup=get_main_menu(role))
 
-@router.callback_query(F.data == "cancel", state="*")
+@router.callback_query(F.data == "cancel")
 async def cancel_handler_callback(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await state.clear()
 
@@ -56,7 +56,7 @@ async def cancel_create_post(message: Message, state: FSMContext):
         reply_markup=get_main_menu('admin')
     )
 
-@router.callback_query(lambda c: c.data == "cancel_edit", state="*")
+@router.callback_query(lambda c: c.data == "cancel_edit")
 async def cancel_edit_handler(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await state.clear()
 
