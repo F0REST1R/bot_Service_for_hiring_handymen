@@ -141,14 +141,25 @@ async def process_worker_phone(message: Message, state: FSMContext, db: AsyncSes
     
     data = await state.update_data(phone=message.text)
     
-    new_user = User(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        role='worker',
-        is_registered=True
+    result = await db.execute(
+        select(User).where(User.telegram_id == message.from_user.id)
     )
-    db.add(new_user)
-    await db.flush()
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = User(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            role='worker',
+            is_registered=True
+        )
+        db.add(user)
+        await db.flush()
+    else:
+        # обновляем роль если переключились
+        user.role = 'worker'
+        user.is_registered = True
+        await db.flush()
     
     new_worker = Worker(
         user_id=new_user.id,
@@ -244,14 +255,25 @@ async def process_customer_phone(message: Message, state: FSMContext, db: AsyncS
     
     data = await state.update_data(phone=message.text)
     
-    new_user = User(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        role='customer',
-        is_registered=True
+    result = await db.execute(
+        select(User).where(User.telegram_id == message.from_user.id)
     )
-    db.add(new_user)
-    await db.flush()
+    user = result.scalar_one_or_none()
+
+    if not user:
+        user = User(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            role='worker',
+            is_registered=True
+        )
+        db.add(user)
+        await db.flush()
+    else:
+        # обновляем роль если переключились
+        user.role = 'worker'
+        user.is_registered = True
+        await db.flush()
     
     new_customer = Customer(
         user_id=new_user.id,
