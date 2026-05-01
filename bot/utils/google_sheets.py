@@ -249,13 +249,13 @@ class GoogleSheetsClient:
 
         for i, row in enumerate(rows[1:], start=2):
             if row[0] == str(user_id):
-                # Берём текущее значение (если пусто → 0)
-                current_warnings = int(row[4]) if len(row) > 4 and row[4] else 0
-                
+                # колонка J = индекс 9 (0-based)
+                current_warnings = int(row[9]) if len(row) > 9 and row[9] else 0
+
                 new_warnings = current_warnings + 1
 
-                # Записываем новое значение (5 колонка = индекс 4)
-                sheet.update_cell(i, 5, new_warnings)
+                # запись в колонку J (10)
+                sheet.update_cell(i, 10, new_warnings)
 
                 print(f"⚠️ Warning обновлён: {user_id} → {new_warnings}")
                 return
