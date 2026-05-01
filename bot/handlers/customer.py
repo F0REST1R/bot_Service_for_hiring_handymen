@@ -397,6 +397,11 @@ async def show_my_orders(message: Message, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data == "all_orders")
 async def show_all_orders(callback: CallbackQuery, db: AsyncSession):
+    try:
+        await callback.message.delete()
+    except:
+        pass
+    
     # 1. Получаем пользователя по telegram_id
     result = await db.execute(
         select(User).where(User.telegram_id == callback.from_user.id)

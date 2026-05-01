@@ -11,7 +11,7 @@ from bot.utils.time_utils import format_datetime_moscow
 router = Router()
 
 @router.message(F.text == "🏙️ Выбрать города")
-async def select_cities(message: Message, db: AsyncSession):
+async def select_cities(message: Message, db: AsyncSession, state: FSMContext):
     # Получаем текущего исполнителя
     result = await db.execute(
         select(Worker).join(User).where(User.telegram_id == message.from_user.id)
@@ -53,7 +53,7 @@ async def select_cities(message: Message, db: AsyncSession):
     )
     
     # Сохраняем в состояние список выбранных городов
-    await WorkerStates.selecting_cities.set()
+    await state.set_state(WorkerStates.selecting_cities)
     await WorkerStates.worker_id.set(worker.id)
 
 @router.message(WorkerStates.selecting_cities, F.text.startswith(("✅ ", "⬜ ")))
