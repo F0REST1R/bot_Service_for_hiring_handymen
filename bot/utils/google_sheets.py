@@ -243,6 +243,25 @@ class GoogleSheetsClient:
                 sheet.update_cell(i, 11, new_comment)
                 return
     
+    def increment_worker_warning(self, user_id: int):
+        sheet = self.sheet.worksheet("Рабочие")
+        rows = sheet.get_all_values()
+
+        for i, row in enumerate(rows[1:], start=2):
+            if row[0] == str(user_id):
+                # Берём текущее значение (если пусто → 0)
+                current_warnings = int(row[4]) if len(row) > 4 and row[4] else 0
+                
+                new_warnings = current_warnings + 1
+
+                # Записываем новое значение (5 колонка = индекс 4)
+                sheet.update_cell(i, 5, new_warnings)
+
+                print(f"⚠️ Warning обновлён: {user_id} → {new_warnings}")
+                return
+
+        print(f"❌ Worker {user_id} не найден в таблице")
+    
     def update_financial_stats(self):
         try:
             orders_sheet = self.sheet.worksheet("Заявки")

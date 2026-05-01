@@ -132,7 +132,8 @@ async def process_worker_message(message: Message, state: FSMContext, db: AsyncS
     if action == "warn":
         user.warnings_count += 1
         await db.commit()
-
+        if google_client:
+            google_client.increment_worker_warning(user.id)
         await message.bot.send_message(
             user.telegram_id,
             f"⚠️ Вам выдано предупреждение:\n\n{message.text}"
