@@ -1715,8 +1715,7 @@ async def admin_finish(
                 'price_for_client': order.price_for_client,
                 'post_status': 'Опубликован',
                 'recruitment_status': 'Набор открыт',
-                'responses_count': 0,
-                'source': 'admin'  # 🔥 полезно для аналитики
+                'responses_count': 0
             }
 
             google_client.save_order(order_data_for_sheet)
