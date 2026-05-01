@@ -333,62 +333,66 @@ async def cancel_order(message: Message, state: FSMContext):
 @router.message(F.text == "ℹ️ Мои заявки")
 async def show_my_orders(message: Message, db: AsyncSession):
     """Показать заявки текущего заказчика"""
-    # Получаем заказчика
+
+    # 🔥 1. Получаем пользователя
     result = await db.execute(
-        select(Customer).join(User).where(User.telegram_id == message.from_user.id)
+        select(User).where(User.telegram_id == message.from_user.id)
     )
-    customer = result.scalar_one_or_none()
-    
-    if not customer:
+    user = result.scalar_one_or_none()
+
+    if not user:
         await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
         return
-    
-    # Получаем все заявки заказчика
+
+    # 🔥 2. Получаем заявки (с городом через join)
     result = await db.execute(
-        select(Order)
-        .where(Order.customer_id == message.from_user.id)
-        .order_by(Order.created_at.desc())  # новые сверху
+        select(Order, City)
+        .join(City, City.id == Order.city_id)
+        .where(Order.customer_id == user.id)  # ✅ ВАЖНО
+        .order_by(Order.created_at.desc())
         .limit(3)
     )
-    orders = result.scalars().all()
-    
+    orders = result.all()
+
     if not orders:
         await message.answer("📭 У вас пока нет созданных заявок")
         return
-    
+
     text = "📋 <b>Мои заявки</b>\n\n"
+
     for order, city in orders:
-        # Определяем статус
+        # статус заявки
         if order.status == 'active':
             status_icon = "🟢"
             status_text = "Активна"
         else:
             status_icon = "🔴"
             status_text = "Закрыта"
-        
-        # Определяем, опубликован ли пост
+
+        # статус поста
         post_status = "✅ Опубликован" if order.channel_post_id else "❌ Не опубликован"
-        
+
         text += f"🆔 <b>Заявка #{order.id}</b>\n"
         text += f"🏙️ Город: {city.name}\n"
-        text += f"📅 Дата: {order.start_datetime.strftime('%d.%m.%Y %H:%M') if not hasattr(order, 'start_datetime_text') else order.start_datetime_text}\n"
+        text += f"📅 Дата: {order.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
         text += f"👥 Человек: {order.workers_count}\n"
-        text += f"💰 Оплата: {order.price_per_person if order.price_per_person else 'не указана'} руб./чел.\n"
+        text += f"💰 Оплата: {order.price_per_person or 'не указана'} руб./чел.\n"
         text += f"📊 Статус: {status_icon} {status_text}\n"
         text += f"📢 Пост: {post_status}\n"
-        
-        # Количество откликнувшихся
+
+        # отклики
         assignments_result = await db.execute(
             select(Assignment).where(Assignment.order_id == order.id)
         )
         assignments_count = len(assignments_result.scalars().all())
+
         text += f"👥 Откликнулось: {assignments_count} чел.\n"
-        text += f"---\n\n"
-    
+        text += "----------------------\n\n"
+
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📂 Все заявки", callback_data="all_orders")]
     ])
-    
+
     await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
 
 @router.callback_query(lambda c: c.data == "all_orders")
