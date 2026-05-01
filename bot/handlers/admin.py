@@ -1241,7 +1241,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
         await callback.message.answer(
             f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>\n\n"
             f"ID сообщения: {sent_message.message_id}",
-            parse_mode="HTML"
+            parse_mode="HTML", reply_markup=get_main_menu("admin")
         )
 
         
@@ -1306,7 +1306,7 @@ async def publish_post_direct(callback: CallbackQuery, db: AsyncSession, bot):
         order.posted_at = datetime.now()
         await db.commit()
         
-        await callback.message.answer(f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>", parse_mode="HTML")
+        await callback.message.answer(f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>", parse_mode="HTML", reply_markup=get_main_menu("admin"))
         
 
         
