@@ -397,21 +397,35 @@ async def show_my_orders(message: Message, db: AsyncSession):
 
 @router.callback_query(lambda c: c.data == "all_orders")
 async def show_all_orders(callback: CallbackQuery, db: AsyncSession):
+    # 1. Получаем пользователя по telegram_id
+    result = await db.execute(
+        select(User).where(User.telegram_id == callback.from_user.id)
+    )
+    user = result.scalar_one_or_none()
+
+    if not user:
+        await callback.message.answer("❌ Пользователь не найден. Нажмите /start")
+        await callback.answer()
+        return
+
+    # 2. Получаем заявки по user.id (ВАЖНО)
     result = await db.execute(
         select(Order)
-        .where(Order.customer_id == callback.from_user.id)
+        .where(Order.customer_id == user.id)
         .order_by(Order.created_at.desc())
     )
     orders = result.scalars().all()
 
     if not orders:
         await callback.message.answer("📭 У вас нет заявок")
+        await callback.answer()
         return
 
+    # 3. Формируем текст
     text = "📂 <b>Все ваши заявки:</b>\n\n"
 
     for order in orders:
-        text += f"🆔 #{order.id}\n"
+        text += f"🆔 <b>#{order.id}</b>\n"
         text += f"📍 {order.address}\n"
         text += f"👥 {order.workers_count} чел.\n"
         text += f"📅 {order.created_at.strftime('%d.%m.%Y %H:%M')}\n"
