@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from bot.database.models import Worker, City, worker_city, Order, Assignment, User
 from bot.keyboards.reply import get_main_menu
-from bot.utils.states import WorkerStates
+from bot.utils.states import WorkerStates, RegistrationStates
 from bot.config import settings
 from bot.utils.time_utils import format_datetime_moscow 
 router = Router()
@@ -197,7 +197,7 @@ async def switch_role(message: Message, state: FSMContext, db: AsyncSession):
                 "📝 Для работы исполнителем нужно заполнить данные\n\n"
                 "Введите ваше имя:"
             )
-            await state.set_state(WorkerStates.entering_name)
+            await state.set_state(RegistrationStates.worker_full_name)
             return
 
     await message.answer(
