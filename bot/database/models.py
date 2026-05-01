@@ -22,6 +22,8 @@ class User(Base):
     role = Column(String(20), nullable=False)  # customer, worker, admin
     is_registered = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
+    is_blocked = Column(Boolean, default=False)
+    warnings_count = Column(Integer, default=0)
     
     # Связи
     customer = relationship("Customer", back_populates="user", uselist=False)

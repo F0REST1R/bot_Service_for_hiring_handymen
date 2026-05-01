@@ -54,7 +54,30 @@ class GoogleSheetsClient:
                 ]
                 orders_sheet.append_row(headers, value_input_option="USER_ENTERED")
                 logger.info("✅ Создан лист 'Заявки'")
-                
+
+            try:
+                workers_sheet = self.sheet.worksheet("Рабочие")
+            except gspread.WorksheetNotFound:
+                workers_sheet = self.sheet.add_worksheet(
+                    title="Рабочие", rows=1000, cols=20
+                )
+
+                headers = [
+                    "User ID",
+                    "Telegram ID",
+                    "Username",
+                    "ФИО",
+                    "Телефон",
+                    "Возраст",
+                    "Гражданство",
+                    "Города",
+                    "Статус",
+                    "Предупреждения",
+                    "Комментарий",
+                    "Дата регистрации"
+                ]
+
+                workers_sheet.append_row(headers, value_input_option="USER_ENTERED")
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации листов: {e}")
     
@@ -172,3 +195,50 @@ class GoogleSheetsClient:
                     
         except Exception as e:
             logger.error(f"❌ Ошибка добавления отклика: {e}")
+    
+    def save_worker(self, user, worker, cities: list):
+        try:
+            sheet = self.sheet.worksheet("Рабочие")
+
+            cities_str = ", ".join(cities) if cities else ""
+
+            row = [
+                user.id,
+                user.telegram_id,
+                user.username or "",
+                worker.full_name,
+                worker.phone,
+                worker.age,
+                worker.citizenship,
+                cities_str,
+                "Заблокирован" if user.is_blocked else "Активен",
+                user.warnings_count,
+                "",  # комментарий
+                user.created_at.strftime('%d.%m.%Y %H:%M')
+            ]
+
+            sheet.append_row(row, value_input_option="USER_ENTERED")
+
+        except Exception as e:
+            logger.error(f"Ошибка сохранения worker: {e}")
+
+    def update_worker_status(self, user_id: int, is_blocked: bool):
+        sheet = self.sheet.worksheet("Рабочие")
+        rows = sheet.get_all_values()
+
+        for i, row in enumerate(rows[1:], start=2):
+            if row[0] == str(user_id):
+                status = "Заблокирован" if is_blocked else "Активен"
+                sheet.update_cell(i, 9, status)
+                return
+    def add_worker_comment(self, user_id: int, comment: str):
+        sheet = self.sheet.worksheet("Рабочие")
+        rows = sheet.get_all_values()
+
+        for i, row in enumerate(rows[1:], start=2):
+            if row[0] == str(user_id):
+                old_comment = row[10] if len(row) > 10 else ""
+                new_comment = f"{old_comment}\n---\n{comment}" if old_comment else comment
+
+                sheet.update_cell(i, 11, new_comment)
+                return

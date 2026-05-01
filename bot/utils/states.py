@@ -54,3 +54,7 @@ class PostStates(StatesGroup):
     editing_description = State()
     confirming_post = State()
     editing_field = State()
+
+class AdminWorkerStates(StatesGroup):
+    entering_id = State()
+    entering_message = State()
