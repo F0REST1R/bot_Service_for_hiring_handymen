@@ -6,7 +6,7 @@ def get_main_menu(role: str):
         buttons = [
             [KeyboardButton(text="📝 Создать заявку")],
             [KeyboardButton(text="ℹ️ Мои заявки")],
-            [KeyboardButton(text="🔄 Сменить роль", callback_data="switch_role")]
+            [KeyboardButton(text="🔄 Сменить роль")]
         ]
     elif role == 'worker':
         buttons = [

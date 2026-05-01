@@ -169,14 +169,13 @@ async def back_to_main_menu(message: Message, state: FSMContext, db: AsyncSessio
             "👋 Нажмите /start для начала работы"
         )
         
-@router.callback_query(lambda c: c.data == "switch_role")
-async def switch_role(callback: CallbackQuery, db: AsyncSession):
+@router.message(F.text == "🔄 Сменить роль")
+async def switch_role(message: Message, state: FSMContext, db: AsyncSession):
     result = await db.execute(
-        select(User).where(User.telegram_id == callback.from_user.id)
+        select(User).where(User.telegram_id == message.from_user.id)
     )
     user = result.scalar_one()
 
-    # переключение роли
     if user.role == "worker":
         user.role = "customer"
         new_role = "Заказчик"
@@ -186,8 +185,23 @@ async def switch_role(callback: CallbackQuery, db: AsyncSession):
 
     await db.commit()
 
-    await callback.message.answer(
+    # проверка профиля исполнителя
+    if user.role == "worker":
+        result = await db.execute(
+            select(Worker).where(Worker.user_id == user.id)
+        )
+        worker = result.scalar_one_or_none()
+
+        if not worker:
+            await message.answer(
+                "📝 Для работы исполнителем нужно заполнить данные\n\n"
+                "Введите ваше имя:"
+            )
+            await state.set_state(WorkerStates.entering_name)
+            return
+
+    await message.answer(
         f"🔄 Роль изменена на: <b>{new_role}</b>",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=get_main_menu(user.role)
     )
-    await callback.answer()
