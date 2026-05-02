@@ -560,7 +560,7 @@ async def edit_city_channel(message: Message, state: FSMContext, db: AsyncSessio
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
     if not city:
-        await callback.answer("Город не найден", show_alert=True)
+        await message.answer("Город не найден", show_alert=True)
         return
     if message.text == "Пропустить":
         await message.answer(f"✅ Канал для города {city.name} оставлен без изменений")
@@ -1254,6 +1254,7 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
             }
             google_client.save_order(order_data_for_sheet)
         
+        await send_post_to_workers(bot, db,  city.id, city.name, post_text, keyboard)
         await callback.message.answer(
             f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>\n\n"
             f"ID сообщения: {sent_message.message_id}",
@@ -1698,7 +1699,44 @@ async def admin_finish(
 
     from bot.utils.time_utils import format_datetime_moscow
 
-    # --- Google Sheets ---
+    # --- пост ---
+    post_text = f"""
+🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
+
+📅 Дата и время: {format_datetime_moscow(order.start_datetime)}
+📍 Адрес: {order.address}
+👥 Требуется человек: {order.workers_count} чел.
+⏱️ Продолжительность: {order.estimated_hours} ч.
+
+📝 Суть работы: {order.work_description}
+
+💰 Оплата: {order.price_per_person} ₽
+
+---
+Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
+"""
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order.id}")]
+    ])
+
+    city_id = data['city_id']
+    result = await db.execute(select(City).where(City.id == city_id))
+    city = result.scalar_one()
+    if not city:
+        await message.answer("Город не найден", show_alert=True)
+        return
+    
+    await bot.send_message(
+        chat_id=city.channel_id,
+        text=post_text,
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
+    await send_post_to_workers(bot, db, city.id, city.name, post_text, keyboard)
+    
+       # --- Google Sheets ---
     try:
         if google_client:
             order_data_for_sheet = {
@@ -1726,35 +1764,6 @@ async def admin_finish(
 
     except Exception as e:
         print(f"❌ Ошибка при записи в Google Sheets: {e}")
-
-    # --- пост ---
-    post_text = f"""
-🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
-
-📅 Дата и время: {format_datetime_moscow(order.start_datetime)}
-📍 Адрес: {order.address}
-👥 Требуется человек: {order.workers_count} чел.
-⏱️ Продолжительность: {order.estimated_hours} ч.
-
-📝 Суть работы: {order.work_description}
-
-💰 Оплата: {order.price_per_person} ₽
-
----
-Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
-"""
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{order.id}")]
-    ])
-
-    await bot.send_message(
-        chat_id=data['channel_id'],
-        text=post_text,
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
-
     await message.answer("✅ Пост создан и опубликован")
     await state.clear()
 
@@ -1956,122 +1965,122 @@ async def create_post_address(message: Message, state: FSMContext):
     )
     await state.set_state(PostStates.editing_description)
 
-@router.message(PostStates.editing_description)
-async def create_post_description(message: Message, state: FSMContext, db: AsyncSession, bot):
-    if message.text == "❌ Отмена":
-        await cancel_create_post(message, state)
-        return
+# @router.message(PostStates.editing_description)
+# async def create_post_description(message: Message, state: FSMContext, db: AsyncSession, bot):
+#     if message.text == "❌ Отмена":
+#         await cancel_create_post(message, state)
+#         return
     
-    await state.update_data(work_description=message.text)
-    data = await state.get_data()
+#     await state.update_data(work_description=message.text)
+#     data = await state.get_data()
     
-    # Восстанавливаем datetime из строки
-    start_datetime = None
-    if data.get('start_datetime_str'):
-        start_datetime = datetime.fromisoformat(data['start_datetime_str'])
+#     # Восстанавливаем datetime из строки
+#     start_datetime = None
+#     if data.get('start_datetime_str'):
+#         start_datetime = datetime.fromisoformat(data['start_datetime_str'])
     
-    if not start_datetime:
-        await message.answer("❌ Ошибка: дата не найдена. Попробуйте начать заново.")
-        await state.clear()
-        return
+#     if not start_datetime:
+#         await message.answer("❌ Ошибка: дата не найдена. Попробуйте начать заново.")
+#         await state.clear()
+#         return
     
-    new_order = Order(
-        customer_id=None,
-        city_id=data['city_id'],
-        full_name="Администратор",
-        contact_phone="",
-        workers_count=data['workers_count'],
-        work_description=data['work_description'],
-        start_datetime=start_datetime,
-        estimated_hours=data['estimated_hours'],
-        address=data['address'],
-        username_for_contact=None,
-        status='active',
-        price_per_person=data['price_per_person'],
-        price_for_client=data.get('price_for_client', data['price_per_person'])
-    )
-    db.add(new_order)
-    await db.commit()
-    await db.refresh(new_order)
+#     new_order = Order(
+#         customer_id=None,
+#         city_id=data['city_id'],
+#         full_name="Администратор",
+#         contact_phone="",
+#         workers_count=data['workers_count'],
+#         work_description=data['work_description'],
+#         start_datetime=start_datetime,
+#         estimated_hours=data['estimated_hours'],
+#         address=data['address'],
+#         username_for_contact=None,
+#         status='active',
+#         price_per_person=data['price_per_person'],
+#         price_for_client=data.get('price_for_client', data['price_per_person'])
+#     )
+#     db.add(new_order)
+#     await db.commit()
+#     await db.refresh(new_order)
     
-    # Форматируем дату и время для отображения
-    moscow_time = format_datetime_moscow(start_datetime)
-    post_text = f"""
-🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
+#     # Форматируем дату и время для отображения
+#     moscow_time = format_datetime_moscow(start_datetime)
+#     post_text = f"""
+# 🏗️ <b>ЗАЯВКА НА РАБОТУ</b>
 
-📅 <b>Дата и время:</b> {format_datetime_moscow(start_datetime)}
+# 📅 <b>Дата и время:</b> {format_datetime_moscow(start_datetime)}
 
-📍 <b>Адрес:</b> {data['address']}
+# 📍 <b>Адрес:</b> {data['address']}
 
-👥 <b>Требуется человек:</b> {data['workers_count']}
+# 👥 <b>Требуется человек:</b> {data['workers_count']}
 
-⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
+# ⏱️ <b>Продолжительность:</b> {data['estimated_hours']} ч.
 
-📝 <b>Суть работы:</b>
-{data['work_description']}
+# 📝 <b>Суть работы:</b>
+# {data['work_description']}
 
-💰 <b>Оплата:</b> {data['price_per_person']} ₽
+# 💰 <b>Оплата:</b> {data['price_per_person']} ₽
 
----
-Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
-"""
+# ---
+# Нажмите кнопку "✅ Я поеду", чтобы откликнуться!
+# """
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{new_order.id}")]
-    ])
+#     keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#         [InlineKeyboardButton(text="✅ Я поеду", callback_data=f"apply_order_{new_order.id}")]
+#     ])
     
-    try:
-        sent_message = await bot.send_message(
-            chat_id=data['channel_id'],
-            text=post_text,
-            reply_markup=keyboard,
-            parse_mode="HTML"
-        )
+#     try:
+#         sent_message = await bot.send_message(
+#             chat_id=data['channel_id'],
+#             text=post_text,
+#             reply_markup=keyboard,
+#             parse_mode="HTML"
+#         )
         
-        result = await db.execute(
-            select(User, Worker)
-            .join(Worker, User.id == Worker.user_id)
-            .join(worker_city, Worker.id == worker_city.c.worker_id)
-            .where(worker_city.c.city_id == data['city_id'])
-            .where(User.is_registered == True)
-        )
-        workers = result.all()
+#         result = await db.execute(
+#             select(User, Worker)
+#             .join(Worker, User.id == Worker.user_id)
+#             .join(worker_city, Worker.id == worker_city.c.worker_id)
+#             .where(worker_city.c.city_id == data['city_id'])
+#             .where(User.is_registered == True)
+#         )
+#         workers = result.all()
         
-        sent_to_workers = 0
-        for user, worker in workers:
-            try:
-                await bot.send_message(
-                    chat_id=user.telegram_id,
-                    text=f"🔔 <b>Новая заявка в городе {data['city_name']}!</b>\n\n{post_text}",
-                    reply_markup=keyboard,
-                    parse_mode="HTML"
-                )
-                sent_to_workers += 1
-            except Exception as e:
-                print(f"Не удалось отправить {user.telegram_id}: {e}")
+#         sent_to_workers = 0
+#         for user, worker in workers:
+#             try:
+#                 await bot.send_message(
+#                     chat_id=user.telegram_id,
+#                     text=f"🔔 <b>Новая заявка в городе {data['city_name']}!</b>\n\n{post_text}",
+#                     reply_markup=keyboard,
+#                     parse_mode="HTML"
+#                 )
+#                 sent_to_workers += 1
+#             except Exception as e:
+#                 print(f"Не удалось отправить {user.telegram_id}: {e}")
         
-        new_order.channel_post_id = sent_message.message_id
-        new_order.posted_at = datetime.now()
-        await db.commit()
+#         new_order.channel_post_id = sent_message.message_id
+#         new_order.posted_at = datetime.now()
+#         await db.commit()
         
-        await message.answer(
-            f"✅ <b>Пост опубликован!</b>\n\n"
-            f"🏙️ Город: {data['city_name']}\n"
-            f"📢 Канал: {data['channel_id']}\n"
-            f"💰 {data['price_per_person']} руб./чел.\n"
-            f"👥 {data['workers_count']} чел.\n"
-            f"📅 {data['start_datetime_text']}\n"
-            f"⏱️ {data['estimated_hours']} ч.\n"
-            f"👥 Отправлено: {sent_to_workers} чел.",
-            parse_mode="HTML", reply_markup=get_main_menu("admin")
-        )
+#         await message.answer(
+#             f"✅ <b>Пост опубликован!</b>\n\n"
+#             f"🏙️ Город: {data['city_name']}\n"
+#             f"📢 Канал: {data['channel_id']}\n"
+#             f"💰 {data['price_per_person']} руб./чел.\n"
+#             f"👥 {data['workers_count']} чел.\n"
+#             f"📅 {data['start_datetime_text']}\n"
+#             f"⏱️ {data['estimated_hours']} ч.\n"
+#             f"👥 Отправлено: {sent_to_workers} чел.",
+#             parse_mode="HTML", reply_markup=get_main_menu("admin")
+#         )
         
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {str(e)}")
-        await db.delete(new_order)
-        await db.commit()
+#     except Exception as e:
+#         await message.answer(f"❌ Ошибка: {str(e)}")
+#         await db.delete(new_order)
+#         await db.commit()
     
-    await state.clear()
+#     await state.clear()
 
 
 @router.callback_query(lambda c: c.data == "cancel_create_post")
@@ -2181,6 +2190,7 @@ async def publish_post_from_order(callback: CallbackQuery, db: AsyncSession, bot
         except:
             pass
 
+        await send_post_to_workers(bot, db, city.id, city.name, post_text, keyboard)
         await callback.message.answer(
             f"✅ <b>Пост успешно опубликован в канале {city.name}!</b>",
             reply_markup=get_main_menu("admin"),
@@ -2191,3 +2201,34 @@ async def publish_post_from_order(callback: CallbackQuery, db: AsyncSession, bot
         await callback.message.answer(f"❌ Ошибка: {str(e)}")
     
     await callback.answer()
+
+async def send_post_to_workers(bot, db, city_id, city_name, text, keyboard):
+    result = await db.execute(
+        select(User, Worker)
+        .join(Worker, User.id == Worker.user_id)
+        .join(worker_city, Worker.id == worker_city.c.worker_id)
+        .where(
+            worker_city.c.city_id == city_id,
+            User.is_registered == True,
+            User.role == "worker"
+        )
+        .distinct()
+    )
+
+    workers = result.all()
+
+    sent = 0
+
+    for user, worker in workers:
+        try:
+            await bot.send_message(
+                user.telegram_id,
+                f"🔔 <b>Новая заявка в городе {city_name}!</b>\n\n{text}",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            sent += 1
+        except Exception as e:
+            print(f"Ошибка отправки {user.telegram_id}: {e}")
+
+    return sent
