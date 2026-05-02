@@ -379,7 +379,9 @@ async def city_detail(callback: CallbackQuery, db: AsyncSession):
     
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-    
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     channel_text = f"📢 Канал: {city.channel_id}" if city.channel_id else "📢 Канал: не привязан"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -557,7 +559,9 @@ async def edit_city_channel(message: Message, state: FSMContext, db: AsyncSessio
     
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-    
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     if message.text == "Пропустить":
         await message.answer(f"✅ Канал для города {city.name} оставлен без изменений")
     elif message.text == "0":
@@ -579,7 +583,9 @@ async def toggle_city(callback: CallbackQuery, db: AsyncSession):
     
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-    
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     city.is_active = not city.is_active
     await db.commit()
     
@@ -597,7 +603,9 @@ async def delete_city(callback: CallbackQuery, db: AsyncSession):
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
     city_name = city.name
-    
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     await db.delete(city)
     await db.commit()
     
@@ -662,7 +670,9 @@ async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSe
 
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     await state.update_data(
         notification_role="by_city",
         notification_city_id=city_id,
@@ -1121,7 +1131,9 @@ async def confirm_post_publish(callback: CallbackQuery, state: FSMContext, db: A
     
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-    
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     if not city.channel_id:
         await callback.message.answer(f"❌ К городу {city.name} не привязан канал!")
         await callback.answer()
@@ -1570,7 +1582,9 @@ async def admin_city_selected(callback: CallbackQuery, state: FSMContext, db: As
 
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     await state.update_data(
         city_id=city.id,
         city_name=city.name,
@@ -1580,23 +1594,6 @@ async def admin_city_selected(callback: CallbackQuery, state: FSMContext, db: As
     await callback.message.answer("👥 Введите количество человек:")
     await state.set_state(PostStates.editing_workers_count)
     await callback.answer()
-
-@router.message(PostStates.editing_workers_count)
-async def admin_workers(message: Message, state: FSMContext):
-    try:
-        workers = int(message.text)
-        if workers <= 0:
-            raise ValueError
-    except:
-        await message.answer("❌ Введите число")
-        return
-
-    await state.update_data(workers_count=workers)
-
-    await message.answer(
-        "📅 Введите дату и время (ДД.ММ.ГГГГ ЧЧ:ММ)"
-    )
-    await state.set_state(PostStates.editing_date)
 
 @router.message(PostStates.editing_date)
 async def admin_date(message: Message, state: FSMContext):
@@ -1846,7 +1843,9 @@ async def create_post_city_selected(callback: CallbackQuery, state: FSMContext, 
     city_id = int(callback.data.split("_")[3])
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-    
+    if not city:
+        await callback.answer("Город не найден", show_alert=True)
+        return
     await state.update_data(city_id=city_id, city_name=city.name, channel_id=city.channel_id)
     
     # Обновляем заявку с городом
@@ -1881,7 +1880,6 @@ async def create_post_workers_count(message: Message, state: FSMContext):
     
     await message.answer(
         "📅 <b>Введите дату и время начала работ</b> (когда нужно приехать)\n\n"
-        "Формат: ДД.ММ.ГГГГ ЧЧ:ММ\n"
         "Пример: 25.05.2026 10:15\n\n"
         "Важно: вводите МОСКОВСКОЕ время",
         reply_markup=get_cancel_keyboard(),

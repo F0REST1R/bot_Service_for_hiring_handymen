@@ -113,7 +113,7 @@ class GoogleSheetsClient:
 
             # ✅ Формулы
             expense_formula = f"=K{last_row}*O{last_row}"
-            profit_formula = f"=L{last_row}*P{last_row}"    # Q
+            profit_formula = f"=L{last_row}-P{last_row}"    # Q
 
             # ✅ Запись в P и Q
             orders_sheet.update_cell(last_row, 16, expense_formula)  # P
