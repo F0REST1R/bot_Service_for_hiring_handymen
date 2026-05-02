@@ -626,68 +626,53 @@ async def send_notification_menu(message: Message, db: AsyncSession):
         parse_mode="HTML"
     )
 
-@router.callback_query(lambda c: c.data.startswith("notify_"))
+@router.callback_query(lambda c: c.data in ["notify_customers", "notify_workers", "notify_by_city"])
 async def notification_type(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await callback.answer()
+
     notification_type = callback.data.split("_")[1]
-    
+
     if notification_type == "by":
-        # Уведомление по городам - показываем список городов
         result = await db.execute(select(City).where(City.is_active == True))
         cities = result.scalars().all()
-        
-        if not cities:
-            await callback.message.answer("❌ Нет активных городов")
-            await callback.answer()
-            return
-        
-        keyboard = []
-        for city in cities:
-            keyboard.append([InlineKeyboardButton(text=city.name, callback_data=f"notify_city_{city.id}")])
+
+        keyboard = [
+            [InlineKeyboardButton(text=city.name, callback_data=f"notify_city_{city.id}")]
+            for city in cities
+        ]
         keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notification")])
-        
+
         await callback.message.answer(
-            "🌍 <b>Выберите город</b> для рассылки уведомления:",
+            "🌍 <b>Выберите город</b>:",
             reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard),
             parse_mode="HTML"
         )
-        await callback.answer()
         return
-    
+
     await state.update_data(notification_role=notification_type)
     await state.set_state(AdminStates.waiting_for_notification_text)
-    
-    await callback.message.answer(
-        "✏️ Введите текст сообщения для рассылки:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notification")]
-        ])
-    )
-    await callback.answer()
+
+    await callback.message.answer("✏️ Введите текст сообщения:")
 
 @router.callback_query(lambda c: c.data.startswith("notify_city_"))
 async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await callback.answer()
+
     city_id = int(callback.data.split("_")[2])
-    
+
     result = await db.execute(select(City).where(City.id == city_id))
     city = result.scalar_one()
-    
-    await state.update_data(notification_role="by_city")
-    await state.update_data(notification_city_id=city_id)
-    await state.update_data(notification_city_name=city.name)
+
+    await state.update_data(
+        notification_role="by_city",
+        notification_city_id=city_id,
+        notification_city_name=city.name
+    )
+
     await state.set_state(AdminStates.waiting_for_notification_text)
-    
-    try:
-        await callback.message.delete()
-    except:
-        pass
 
     await callback.message.answer(
-        f"✏️ Введите текст сообщения для рассылки пользователям из города <b>{city.name}</b>:",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_notification")]
-        ]),
+        f"✏️ Введите текст для <b>{city.name}</b>:",
         parse_mode="HTML"
     )
     await callback.answer()
@@ -695,27 +680,42 @@ async def notify_by_city(callback: CallbackQuery, state: FSMContext, db: AsyncSe
 @router.message(AdminStates.waiting_for_notification_text)
 async def send_notification(message: Message, state: FSMContext, db: AsyncSession, bot):
     data = await state.get_data()
+
     role = data.get('notification_role')
     city_id = data.get('notification_city_id')
-    city_name = data.get('notification_city_name')
     text = message.text
+
     print("ROLE:", role)
     print("CITY_ID:", city_id)
-    # Получаем пользователей в зависимости от выбора
+
+    # ❗ ЖЁСТКАЯ проверка
+    if role == "by_city" and not city_id:
+        await message.answer("❌ Ошибка: не выбран город")
+        await state.clear()
+        return
+
+    # -----------------------
     if role == 'customers':
         result = await db.execute(
-            select(User).where(User.role == 'customer', User.is_registered == True)
+            select(User).where(
+                User.role == 'customer',
+                User.is_registered == True
+            )
         )
+
     elif role == 'workers':
         result = await db.execute(
-            select(User).where(User.role == 'worker', User.is_registered == True)
+            select(User).where(
+                User.role == 'worker',
+                User.is_registered == True
+            )
         )
-    # Выбираем пользователей из города
-    elif role == 'by_city' and city_id:
+
+    elif role == 'by_city':
         result = await db.execute(
             select(User)
-            .join(Worker, User.id == Worker.user_id)
-            .join(worker_city, Worker.id == worker_city.c.worker_id)
+            .join(Worker, Worker.user_id == User.id)
+            .join(worker_city, worker_city.c.worker_id == Worker.id)
             .where(
                 worker_city.c.city_id == city_id,
                 User.role == 'worker',
@@ -723,32 +723,30 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
             )
             .distinct()
         )
+
     else:
-        result = await db.execute(
-            select(User).where(User.is_registered == True)
-        )
-    
+        await message.answer("❌ Неизвестный тип уведомления")
+        await state.clear()
+        return
+
     users = result.scalars().all()
-    
-    title = "📢 <b>Уведомление от администратора</b>"
-    
+
+    print("FOUND USERS:", len(users))
+
     sent = 0
+
     for user in users:
         try:
             await bot.send_message(
-                user.telegram_id, 
-                f"{title}\n\n{text}", 
+                user.telegram_id,
+                f"📢 <b>Уведомление</b>\n\n{text}",
                 parse_mode="HTML"
             )
             sent += 1
         except Exception as e:
-            print(f"Не удалось отправить сообщение пользователю {user.telegram_id}: {e}")
-    
-    if city_name:
-        await message.answer(f"✅ Уведомление отправлено исполнителям из города {city_name}!")
-    else:
-        await message.answer(f"✅ Уведомление отправлено пользователям!")
-    
+            print("ERROR:", e)
+
+    await message.answer(f"✅ Отправлено: {sent} пользователям")
     await state.clear()
 
 @router.message(F.text == "📊 Аналитика")
