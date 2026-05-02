@@ -699,7 +699,8 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
     city_id = data.get('notification_city_id')
     city_name = data.get('notification_city_name')
     text = message.text
-    
+    print("ROLE:", role)
+    print("CITY_ID:", city_id)
     # Получаем пользователей в зависимости от выбора
     if role == 'customers':
         result = await db.execute(
