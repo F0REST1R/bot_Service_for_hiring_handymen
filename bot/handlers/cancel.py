@@ -28,10 +28,12 @@ async def universal_cancel(message: Message, state: FSMContext, db: AsyncSession
 @router.callback_query(F.data == "cancel")
 async def cancel_handler_callback(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await state.clear()
-
+    result = await db.execute(select(User).where(User.telegram_id == callback.message.from_user.id))
+    user = result.scalar_one_or_none()
+    role = user.role if user else 'customer'
     await callback.message.answer(
         "❌ Действие отменено",
-        reply_markup=await get_main_menu(callback.from_user.id, db)
+        reply_markup=await get_main_menu(role)
     )
     await callback.answer()
 
@@ -59,10 +61,9 @@ async def cancel_create_post(message: Message, state: FSMContext):
 @router.callback_query(lambda c: c.data == "cancel_edit")
 async def cancel_edit_handler(callback: CallbackQuery, state: FSMContext, db: AsyncSession):
     await state.clear()
-
     await callback.message.answer(
         "❌ Редактирование отменено",
-        reply_markup=await get_main_menu(callback.from_user.id, db)
+        reply_markup=await get_main_menu('admin')
     )
 
     await callback.answer()

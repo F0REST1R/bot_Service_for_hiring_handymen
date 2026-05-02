@@ -176,6 +176,10 @@ async def switch_role(message: Message, state: FSMContext, db: AsyncSession):
     )
     user = result.scalar_one()
 
+    if not user:
+        await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
+        return
+    
     if user.role == "worker":
         user.role = "customer"
         new_role = "Заказчик"

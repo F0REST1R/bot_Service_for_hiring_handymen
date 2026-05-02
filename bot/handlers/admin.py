@@ -709,13 +709,18 @@ async def send_notification(message: Message, state: FSMContext, db: AsyncSessio
         result = await db.execute(
             select(User).where(User.role == 'worker', User.is_registered == True)
         )
+    # Выбираем пользователей из города
     elif role == 'by_city' and city_id:
-        # Получаем исполнителей из выбранного города
         result = await db.execute(
             select(User)
             .join(Worker, User.id == Worker.user_id)
             .join(worker_city, Worker.id == worker_city.c.worker_id)
-            .where(worker_city.c.city_id == city_id)
+            .where(
+                worker_city.c.city_id == city_id,
+                User.role == 'worker',
+                User.is_registered == True
+            )
+            .distinct()
         )
     else:
         result = await db.execute(
