@@ -38,6 +38,7 @@ class AdminStates(StatesGroup):
     waiting_for_post_city = State()
     waiting_for_post_text = State()
     editing_rules = State()
+    waiting_remove_worker_id = State()
 
 
 class PostStates(StatesGroup):
