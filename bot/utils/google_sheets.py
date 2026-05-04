@@ -269,3 +269,19 @@ class GoogleSheetsClient:
 
         print(f"❌ Worker {user_id} не найден в таблице")
     
+    def decrement_response(self, order_id: int):
+        sheet = self.sheet.worksheet("Заявки")
+        rows = sheet.get_all_values()
+
+        for i, row in enumerate(rows[1:], start=2):
+            if row[0] == str(order_id):
+                current = int(row[14]) if len(row) > 14 and row[14] else 0
+
+                new_value = max(0, current - 1)
+
+                sheet.update_cell(i, 15, new_value)
+
+                print(f"➖ Отклик уменьшен: {order_id} → {new_value}")
+                return
+
+        print(f"❌ Заявка {order_id} не найдена")

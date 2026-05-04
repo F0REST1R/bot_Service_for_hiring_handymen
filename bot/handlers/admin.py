@@ -239,6 +239,10 @@ async def show_order_details(message: Message, db: AsyncSession):
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text="🔓 Открыть набор", callback_data=f"open_order_{order.id}")]
         )
+
+    keyboard.inline_keyboard.append(
+        [InlineKeyboardButton(text="❌ Убрать исполнителя", callback_data=f"remove_worker_{order.id}")]
+    )
     
     await message.answer(order_text, reply_markup=keyboard, parse_mode="HTML")
 
@@ -2233,6 +2237,7 @@ async def send_post_to_workers(bot, db, city_id, city_name, text, keyboard):
 
     return sent
 
+# =========================== Изменение правил ===========================
 @router.message(F.text == "✏️ Изменить правила")
 async def edit_rules_start(message: Message, state: FSMContext, db: AsyncSession):
     if not await is_admin(message.from_user.id, db):
@@ -2270,4 +2275,82 @@ async def save_rules(message: Message, state: FSMContext, db: AsyncSession):
         reply_markup=get_main_menu("admin")
     )
 
+    await state.clear()
+
+
+# =========================== Удаление исполнителя ===========================
+@router.callback_query(lambda c: c.data.startswith("remove_worker_"))
+async def remove_worker_start(callback: CallbackQuery, state: FSMContext):
+    order_id = int(callback.data.split("_")[2])
+
+    await state.update_data(remove_order_id=order_id)
+
+    await callback.message.answer(
+        "Введите ID исполнителя, которого нужно убрать:"
+    )
+
+    await state.set_state(AdminStates.waiting_remove_worker_id)
+    await callback.answer()
+
+@router.message(AdminStates.waiting_remove_worker_id)
+async def remove_worker_from_order(message: Message, state: FSMContext, db: AsyncSession, bot, google_client=None):
+    try:
+        user_id = int(message.text)
+    except:
+        await message.answer("❌ Введите числовой ID")
+        return
+
+    data = await state.get_data()
+    order_id = data.get("remove_order_id")
+
+    # Получаем пользователя
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        await message.answer("❌ Пользователь не найден")
+        return
+
+    # Получаем worker
+    result = await db.execute(select(Worker).where(Worker.user_id == user.id))
+    worker = result.scalar_one_or_none()
+
+    if not worker:
+        await message.answer("❌ Исполнитель не найден")
+        return
+
+    # Ищем assignment
+    result = await db.execute(
+        select(Assignment).where(
+            Assignment.order_id == order_id,
+            Assignment.worker_id == worker.id
+        )
+    )
+    assignment = result.scalar_one_or_none()
+
+    if not assignment:
+        await message.answer("❌ Этот исполнитель не откликался на заявку")
+        return
+
+    # ❗ УДАЛЯЕМ
+    await db.delete(assignment)
+    await db.commit()
+
+    # --- уведомление исполнителю ---
+    try:
+        await bot.send_message(
+            user.telegram_id,
+            f"❌ Вы были удалены из заявки #{order_id}",
+        )
+    except:
+        pass
+
+    # --- обновление Google Sheets ---
+    try:
+        if google_client:
+            google_client.decrement_response(order_id)
+    except Exception as e:
+        print("Ошибка GS:", e)
+
+    await message.answer(f"✅ Исполнитель {user_id} удалён из заявки")
     await state.clear()
