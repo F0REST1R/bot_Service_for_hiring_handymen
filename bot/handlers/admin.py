@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from datetime import datetime, timedelta
-from bot.database.models import User, City, Order, Assignment, Worker, worker_city
+from bot.database.models import User, City, Order, Assignment, Worker, worker_city, Setting
 from bot.utils.states import AdminStates, PostStates
 from bot.utils.time_utils import format_datetime_moscow
 from bot.config import settings
@@ -2232,3 +2232,42 @@ async def send_post_to_workers(bot, db, city_id, city_name, text, keyboard):
             print(f"Ошибка отправки {user.telegram_id}: {e}")
 
     return sent
+
+@router.message(F.text == "✏️ Изменить правила")
+async def edit_rules_start(message: Message, state: FSMContext, db: AsyncSession):
+    if not await is_admin(message.from_user.id, db):
+        await message.answer("⛔ Нет доступа")
+        return
+
+    await message.answer(
+        "✏️ Введите новый текст правил:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+        ])
+    )
+
+    await state.set_state(AdminStates.editing_rules)
+
+@router.message(AdminStates.editing_rules)
+async def save_rules(message: Message, state: FSMContext, db: AsyncSession):
+    new_text = message.text
+
+    result = await db.execute(
+        select(Setting).where(Setting.key == "rules")
+    )
+    rules = result.scalar_one_or_none()
+
+    if rules:
+        rules.value = new_text
+    else:
+        rules = Setting(key="rules", value=new_text)
+        db.add(rules)
+
+    await db.commit()
+
+    await message.answer(
+        "✅ Правила успешно обновлены",
+        reply_markup=get_main_menu("admin")
+    )
+
+    await state.clear()

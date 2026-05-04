@@ -114,3 +114,11 @@ class Assignment(Base):
     # Связи
     order = relationship("Order", back_populates="assignments")
     worker = relationship("Worker")
+
+class Setting(Base):
+    __tablename__ = "settings"
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(100), unique=True)
+    value = Column(Text)
+

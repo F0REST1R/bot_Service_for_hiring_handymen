@@ -3,7 +3,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKe
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from bot.database.models import Worker, City, worker_city, Order, Assignment, User
+from bot.database.models import Worker, City, worker_city, Order, Assignment, User, Setting
 from bot.keyboards.reply import get_main_menu
 from bot.utils.states import WorkerStates, RegistrationStates
 from bot.config import settings
@@ -98,21 +98,20 @@ async def save_cities(message: Message, state: FSMContext, db: AsyncSession):
     await state.clear()
 
 @router.message(F.text == "📋 Правила работы")
-async def show_rules(message: Message):
-    rules_text = """
-📋 *Правила работы*
+async def show_rules(message: Message, db: AsyncSession):
+    result = await db.execute(
+        select(Setting).where(Setting.key == "rules")
+    )
+    rules = result.scalar_one_or_none()
 
-1. Вы выбираете города, в которых готовы работать
-2. Заявки приходят только из выбранных вами городов
-3. Чтобы откликнуться на заявку, нажмите кнопку "Поеду"
-4. После отклика с вами свяжется администратор
-5. При возникновении вопросов обращайтесь к администратору
+    if not rules:
+        await message.answer("❌ Правила пока не заданы")
+        return
 
-*Важно:* 
-- Своевременно откликайтесь на заявки
-- При изменении графика работы обновите выбор городов
-"""
-    await message.answer(rules_text, parse_mode="Markdown")
+    await message.answer(
+        f"📋 <b>Правила работы</b>\n\n{rules.value}",
+        parse_mode="HTML"
+    )
 
 @router.message(F.text == "📊 Мои отклики")
 async def show_my_responses(message: Message, db: AsyncSession):
