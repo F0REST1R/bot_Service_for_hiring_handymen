@@ -2334,6 +2334,20 @@ async def remove_worker_from_order(message: Message, state: FSMContext, db: Asyn
 
     # ❗ УДАЛЯЕМ
     await db.delete(assignment)
+    # Получаем актуальное количество откликов
+    result = await db.execute(
+        select(Assignment).where(Assignment.order_id == order_id)
+    )
+    remaining_assignments = result.scalars().all()
+
+    # Получаем заказ
+    result = await db.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one()
+
+    # 🔥 ЕСЛИ ПОЯВИЛОСЬ МЕСТО → ОТКРЫВАЕМ НАБОР
+    if len(remaining_assignments) < order.workers_count:
+        order.status = 'active'
+
     await db.commit()
 
     # --- уведомление исполнителю ---
