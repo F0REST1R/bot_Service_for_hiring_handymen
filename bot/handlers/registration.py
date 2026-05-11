@@ -276,12 +276,13 @@ async def process_customer_full_name(message: Message, state: FSMContext):
     await state.set_state(RegistrationStates.customer_phone)
 
 @router.message(RegistrationStates.customer_phone)
-async def process_customer_phone(message: Message, state: FSMContext, db: AsyncSession):
+async def process_customer_phone(message: Message, state: FSMContext, db: AsyncSession, google_client = None):
     if message.text == "❌ Отмена":
         await cancel_registration(message, state)
         return
     
-    data = await state.update_data(phone=message.text)
+    await state.update_data(phone=message.text)
+    data = await state.get_data()
     
     new_user = User(
         telegram_id=message.from_user.id,
@@ -300,6 +301,9 @@ async def process_customer_phone(message: Message, state: FSMContext, db: AsyncS
     db.add(new_customer)
     await db.commit()
     
+    if google_client:
+        google_client.save_customer(new_user, new_customer)
+
     await message.answer(
         "✅ Регистрация завершена!",
         reply_markup=get_main_menu('customer')

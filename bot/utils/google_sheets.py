@@ -55,6 +55,25 @@ class GoogleSheetsClient:
                 ]
                 orders_sheet.append_row(headers, value_input_option="USER_ENTERED")
                 logger.info("✅ Создан лист 'Заявки'")
+            
+            try:
+                customers_sheet = self.sheet.worksheet("Заказчики")
+            except gspread.WorksheetNotFound:
+                customers_sheet = self.sheet.add_worksheet(
+                    title="Заказчики", rows=1000, cols=20
+                )
+
+                headers = [
+                    "User ID",
+                    "Telegram ID",
+                    "Username",
+                    "ФИО / Компания",
+                    "Телефон",
+                    "Статус",
+                    "Дата регистрации"
+                ]
+
+                customers_sheet.append_row(headers, value_input_option="USER_ENTERED")
 
             try:
                 workers_sheet = self.sheet.worksheet("Рабочие")
@@ -124,7 +143,27 @@ class GoogleSheetsClient:
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения заявки в Google Sheets: {e}")
     
-    
+    def save_customer(self, user, customer):
+        try:
+            sheet = self.sheet.worksheet("Заказчики")
+
+            row = [
+                user.id,
+                user.telegram_id,
+                user.username or "",
+                customer.full_name,
+                customer.phone,
+                "Активен",
+                user.created_at.strftime('%d.%m.%Y %H:%M')
+            ]
+
+            sheet.append_row(row, value_input_option="USER_ENTERED")
+
+            logger.info(f"✅ Заказчик {customer.full_name} сохранён")
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения заказчика: {e}")
+            
     def update_order_status(self, order_id: int, status_field: str, new_value: str):
         """Обновление статуса заявки в таблице"""
         try:
